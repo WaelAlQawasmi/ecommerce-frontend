@@ -1,0 +1,373 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand-50: #f5f3ff;
+  --color-brand-100: #ede9fe;
+  --color-brand-200: #ddd6fe;
+  --color-brand-300: #c4b5fd;
+  --color-brand-400: #a78bfa;
+  --color-brand-500: #8b5cf6;
+  --color-brand-600: #7c3aed;
+  --color-brand-700: #6d28d9;
+  --color-brand-800: #5b21b6;
+  --color-brand-900: #4c1d95;
+
+  --color-surface-muted: #f8fafc;
+  --color-text: #0f172a;
+
+  --shadow-soft: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 16px rgb(15 23 42 / 0.06);
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px rgb(15 23 42 / 0.08);
+  --shadow-card-hover: 0 4px 8px rgb(15 23 42 / 0.06), 0 16px 40px rgb(124 58 237 / 0.12);
+  --shadow-btn: 0 1px 2px rgb(15 23 42 / 0.06), 0 4px 12px rgb(124 58 237 / 0.25);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-surface-muted font-sans text-text antialiased;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% -20%, rgb(139 92 246 / 0.12), transparent),
+    radial-gradient(ellipse 50% 40% at 100% 0%, rgb(59 130 246 / 0.08), transparent),
+    radial-gradient(ellipse 40% 30% at 0% 100%, rgb(16 185 129 / 0.06), transparent);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* ── Buttons ── */
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none;
+  --tw-ring-color: rgb(139 92 246 / 0.3);
+}
+
+.btn-primary {
+  @apply bg-brand-600 text-white hover:bg-brand-700;
+  box-shadow: var(--shadow-btn);
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-secondary:hover:not(:disabled),
+.btn-danger:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.btn-primary:active:not(:disabled),
+.btn-secondary:active:not(:disabled),
+.btn-danger:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  @apply bg-white text-slate-700 ring-1 ring-slate-200 backdrop-blur hover:bg-white hover:ring-slate-300;
+  background-color: rgb(255 255 255 / 0.8);
+  box-shadow: var(--shadow-soft);
+}
+
+.btn-danger {
+  @apply bg-red-500 text-white hover:bg-red-600;
+  box-shadow: 0 4px 12px rgb(239 68 68 / 0.25);
+}
+
+.btn-ghost {
+  @apply text-slate-600 hover:text-slate-900;
+  background-color: transparent;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background-color: rgb(241 245 249 / 0.8);
+}
+
+/* ── Forms ── */
+.input,
+.select {
+  @apply block w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm backdrop-blur placeholder:text-slate-400 transition-all duration-200 focus:border-brand-400 focus:bg-white focus:outline-none focus:ring-4;
+  border-color: rgb(226 232 240 / 0.8);
+  background-color: rgb(255 255 255 / 0.8);
+  --tw-ring-color: rgb(139 92 246 / 0.1);
+}
+
+.select {
+  @apply cursor-pointer appearance-none bg-no-repeat pr-10;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2364748b' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+  background-size: 1.25rem;
+  background-position: right 0.75rem center;
+}
+
+.input-error {
+  @apply border-red-300 focus:border-red-400;
+  --tw-ring-color: rgb(239 68 68 / 0.1);
+}
+
+.label {
+  @apply mb-2 block text-sm font-medium text-slate-700;
+}
+
+/* ── Cards ── */
+.card {
+  @apply rounded-2xl border shadow-sm backdrop-blur-xl;
+  border-color: rgb(255 255 255 / 0.6);
+  background-color: rgb(255 255 255 / 0.7);
+  box-shadow: var(--shadow-card);
+}
+
+.card-hover {
+  @apply transition-all duration-300;
+}
+
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-card-hover);
+}
+
+/* ── Badges ── */
+.badge {
+  @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold tracking-wide;
+}
+
+.badge-admin {
+  @apply bg-violet-100 text-violet-700 ring-1;
+  --tw-ring-color: rgb(221 214 254 / 0.6);
+}
+
+.badge-support {
+  @apply bg-amber-100 text-amber-800 ring-1;
+  --tw-ring-color: rgb(253 230 138 / 0.6);
+}
+
+.badge-customer {
+  @apply bg-emerald-100 text-emerald-700 ring-1;
+  --tw-ring-color: rgb(167 243 208 / 0.6);
+}
+
+/* ── Typography ── */
+.page-title {
+  @apply text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl;
+}
+
+.page-subtitle {
+  @apply mt-2 text-base text-slate-500;
+}
+
+.gradient-text {
+  @apply bg-gradient-to-r from-brand-600 to-indigo-500 bg-clip-text text-transparent;
+}
+
+.link {
+  @apply font-semibold text-brand-600 transition-colors hover:text-brand-700;
+}
+
+/* ── Layout helpers ── */
+.glass-nav {
+  @apply sticky top-0 z-50 border-b backdrop-blur-xl;
+  border-color: rgb(255 255 255 / 0.4);
+  background-color: rgb(255 255 255 / 0.7);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.6), var(--shadow-soft);
+}
+
+.sidebar {
+  @apply hidden w-72 shrink-0 border-r bg-slate-950 lg:block;
+  border-color: rgb(30 41 59 / 0.5);
+}
+
+.sidebar-link {
+  @apply flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-200;
+}
+
+.sidebar-link-active {
+  @apply text-brand-300 ring-1;
+  background-color: rgb(124 58 237 / 0.2);
+  --tw-ring-color: rgb(139 92 246 / 0.3);
+}
+
+.sidebar-link-inactive {
+  @apply text-slate-400 hover:text-white;
+}
+
+.sidebar-link-inactive:hover {
+  background-color: rgb(30 41 59 / 0.6);
+}
+
+/* ── Hero & shop ── */
+.shop-hero {
+  @apply relative overflow-hidden rounded-3xl border bg-gradient-to-br from-brand-600 via-brand-700 to-indigo-800 p-8 text-white sm:p-10;
+  border-color: rgb(255 255 255 / 0.5);
+  box-shadow: 0 20px 60px rgb(124 58 237 / 0.25);
+}
+
+.shop-hero::before {
+  content: '';
+  @apply pointer-events-none absolute h-64 w-64 rounded-full blur-3xl;
+  right: -5rem;
+  top: -5rem;
+  background-color: rgb(255 255 255 / 0.1);
+}
+
+.shop-hero::after {
+  content: '';
+  @apply pointer-events-none absolute h-48 w-48 rounded-full blur-3xl;
+  bottom: -4rem;
+  left: -4rem;
+  background-color: rgb(129 140 248 / 0.2);
+}
+
+.search-bar {
+  @apply flex items-center gap-3 rounded-2xl border p-2 shadow-sm backdrop-blur-xl;
+  border-color: rgb(226 232 240 / 0.6);
+  background-color: rgb(255 255 255 / 0.9);
+  box-shadow: var(--shadow-soft);
+}
+
+.search-bar .input {
+  @apply border-0 bg-transparent shadow-none ring-0 focus:ring-0;
+}
+
+/* ── Product card ── */
+.product-card {
+  @apply rounded-2xl border shadow-sm backdrop-blur-xl transition-all duration-300 flex flex-col overflow-hidden;
+  border-color: rgb(255 255 255 / 0.6);
+  background-color: rgb(255 255 255 / 0.7);
+  box-shadow: var(--shadow-card);
+}
+
+.product-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.product-card-image {
+  @apply relative flex h-44 items-center justify-center overflow-hidden bg-gradient-to-br from-brand-50 via-violet-50 to-slate-100;
+}
+
+.product-card-image::before {
+  content: '';
+  @apply absolute inset-0;
+  background: radial-gradient(circle at 30% 20%, rgb(139 92 246 / 0.15), transparent 50%);
+}
+
+.product-card-icon {
+  @apply relative text-5xl transition-transform duration-300;
+}
+
+.product-card:hover .product-card-icon {
+  transform: scale(1.1);
+}
+
+/* ── Auth ── */
+.auth-page {
+  @apply relative flex min-h-screen flex-col items-stretch justify-center overflow-hidden px-4 py-12 lg:flex-row lg:items-center lg:gap-8 lg:px-8 xl:gap-16;
+}
+
+.auth-panel-left {
+  @apply hidden lg:flex lg:w-1/2 lg:flex-col lg:justify-center lg:p-16;
+}
+
+.auth-card {
+  @apply w-full max-w-md rounded-2xl border p-8 shadow-sm backdrop-blur-xl sm:p-10;
+  border-color: rgb(255 255 255 / 0.6);
+  background-color: rgb(255 255 255 / 0.7);
+  box-shadow: var(--shadow-card);
+}
+
+/* ── Stats & tables ── */
+.stat-card {
+  @apply rounded-2xl border p-6 shadow-sm backdrop-blur-xl transition-all duration-300;
+  border-color: rgb(255 255 255 / 0.6);
+  background-color: rgb(255 255 255 / 0.7);
+  box-shadow: var(--shadow-card);
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.stat-icon {
+  @apply flex h-12 w-12 items-center justify-center rounded-2xl text-xl;
+}
+
+.table-wrap {
+  @apply overflow-hidden rounded-2xl border backdrop-blur;
+  border-color: rgb(226 232 240 / 0.6);
+  background-color: rgb(255 255 255 / 0.8);
+  box-shadow: var(--shadow-soft);
+}
+
+.table-wrap table {
+  @apply min-w-full text-sm;
+}
+
+.table-wrap thead {
+  background-color: rgb(248 250 252 / 0.8);
+}
+
+.table-wrap th {
+  @apply px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500;
+}
+
+.table-wrap td {
+  @apply px-5 py-4 text-slate-700;
+}
+
+.table-wrap tbody tr {
+  @apply border-t border-slate-100 transition-colors;
+}
+
+.table-wrap tbody tr:hover {
+  background-color: rgb(245 243 255 / 0.3);
+}
+
+/* ── Modal ── */
+.modal-overlay {
+  @apply fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm;
+  background-color: rgb(15 23 42 / 0.4);
+}
+
+.modal-content {
+  @apply w-full max-w-lg rounded-2xl border p-6 shadow-sm backdrop-blur-xl sm:p-8;
+  border-color: rgb(255 255 255 / 0.6);
+  background-color: rgb(255 255 255 / 0.7);
+  box-shadow: var(--shadow-card);
+  animation: modal-in 0.2s ease-out;
+}
+
+/* ── Empty state ── */
+.empty-state {
+  @apply flex flex-col items-center justify-center rounded-2xl border py-20 text-center shadow-sm backdrop-blur-xl;
+  border-color: rgb(255 255 255 / 0.6);
+  background-color: rgb(255 255 255 / 0.7);
+  box-shadow: var(--shadow-card);
+}
+
+/* ── Animations ── */
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.4s ease-out both;
+}
+
+.animate-delay-1 { animation-delay: 0.05s; }
+.animate-delay-2 { animation-delay: 0.1s; }
+.animate-delay-3 { animation-delay: 0.15s; }
