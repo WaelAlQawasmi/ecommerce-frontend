@@ -4,6 +4,7 @@ import { productsApi, categoriesApi } from '@/api/products.api'
 import type { Product, Category, CreateProductPayload } from '@/types'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import AlertMessage from '@/components/common/AlertMessage.vue'
+import AppModal from '@/components/common/AppModal.vue'
 import { formatPrice, extractErrorMessage } from '@/utils/helpers'
 
 const products = ref<Product[]>([])
@@ -136,47 +137,64 @@ onMounted(loadData)
       </table>
     </div>
 
-    <div v-if="showForm" class="modal-overlay" @click.self="showForm = false">
-      <div class="modal-content">
-        <h2 class="text-xl font-bold tracking-tight">{{ editingId ? 'Edit product' : 'New product' }}</h2>
-        <AlertMessage v-if="formError" :message="formError" class="mt-4" />
-        <form class="mt-6 space-y-4" @submit.prevent="handleSubmit">
+    <AppModal
+      v-model="showForm"
+      :title="editingId ? 'Edit product' : 'New product'"
+      :subtitle="editingId ? 'Update product details below' : 'Fill in the details to add a product'"
+    >
+      <AlertMessage v-if="formError" :message="formError" class="mb-5" />
+
+      <form id="product-form" class="space-y-5" @submit.prevent="handleSubmit">
+        <div>
+          <label for="product-name" class="label">Product name</label>
+          <input id="product-name" v-model="form.name" required class="input" placeholder="e.g. Wireless Headphones" />
+        </div>
+
+        <div>
+          <label for="product-description" class="label">Description</label>
+          <textarea
+            id="product-description"
+            v-model="form.description"
+            rows="3"
+            class="input resize-none"
+            placeholder="Short product description (optional)"
+          />
+        </div>
+
+        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
           <div>
-            <label class="label">Name</label>
-            <input v-model="form.name" required class="input" />
+            <label for="product-price" class="label">Price ($)</label>
+            <input id="product-price" v-model.number="form.price" type="number" step="0.01" min="0" required class="input" />
           </div>
           <div>
-            <label class="label">Description</label>
-            <textarea v-model="form.description" rows="3" class="input" />
+            <label for="product-stock" class="label">Stock quantity</label>
+            <input id="product-stock" v-model.number="form.stock" type="number" min="0" required class="input" />
           </div>
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="label">Price</label>
-              <input v-model.number="form.price" type="number" step="0.01" min="0" required class="input" />
-            </div>
-            <div>
-              <label class="label">Stock</label>
-              <input v-model.number="form.stock" type="number" min="0" required class="input" />
-            </div>
-          </div>
-          <div>
-            <label class="label">Category</label>
-            <select v-model.number="form.categoryId" required class="select">
-              <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
-            </select>
-          </div>
-          <label class="flex items-center gap-2.5 text-sm font-medium text-slate-700">
-            <input v-model="form.isActive" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
-            Active
-          </label>
-          <div class="flex justify-end gap-3 border-t border-slate-100 pt-4">
-            <button type="button" class="btn btn-secondary" @click="showForm = false">Cancel</button>
-            <button type="submit" class="btn btn-primary" :disabled="submitting">
-              {{ submitting ? 'Saving…' : 'Save' }}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        </div>
+
+        <div>
+          <label for="product-category" class="label">Category</label>
+          <select id="product-category" v-model.number="form.categoryId" required class="select">
+            <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+          </select>
+        </div>
+
+        <label class="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <input
+            v-model="form.isActive"
+            type="checkbox"
+            class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+          />
+          <span class="text-sm font-medium text-slate-700">Product is active and visible in the shop</span>
+        </label>
+      </form>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="showForm = false">Cancel</button>
+        <button type="submit" form="product-form" class="btn btn-primary" :disabled="submitting">
+          {{ submitting ? 'Saving…' : 'Save product' }}
+        </button>
+      </template>
+    </AppModal>
   </div>
 </template>

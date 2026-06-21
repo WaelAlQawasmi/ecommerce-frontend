@@ -1,58 +1,111 @@
-# E-Commerce Frontend
+# E-Commerce Platform
 
-Vue 3 frontend for a multi-role e-commerce microservices platform.
+A **microservices-based e-commerce platform** with three independently deployable components: Auth Service (Laravel), Products Service (Node.js/TypeScript), and a Vue 3 frontend.
 
-## Architecture
+## Repositories
 
-| Service | Base URL (dev proxy) | Purpose |
-|---------|---------------------|---------|
-| Auth | `/api/auth` → `http://54.160.228.203/api/v1` | Login, register, users, roles |
-| Products | `/api/products` → `http://54.160.228.203:3001/api/v1` | Products, categories, search |
+| Component | Repository | Stack |
+|-----------|------------|-------|
+| **Auth Service** | [ecommerce-auth-service](https://github.com/WaelAlQawasmi/ecommerce-auth-service) | Laravel, MySQL, Redis, Kafka, TDD |
+| **Products Service** | [ecommerce-prodacts-service](https://github.com/WaelAlQawasmi/ecommerce-prodacts-service) | Node.js, TypeScript, DDD, PostgreSQL, Elasticsearch, gRPC, Kafka, TDD |
+| **Frontend** | This repository | Vue 3, TypeScript, Vite, Tailwind CSS |
 
-## Roles
+## Platform Documentation
 
-- **Customer** — Browse shop, search products, view details
-- **Support** — Search and view users
-- **Admin** — Full CRUD on products/categories, user management, role assignment
+Full platform documentation lives in the [`docs/`](./docs/README.md) directory:
 
-## Stack
+| Document | Description |
+|----------|-------------|
+| [Platform Overview](./docs/README.md) | Index and quick start |
+| [Diagrams & Schemas](./docs/diagrams.md) | Visual architecture, project structure, ER diagrams, flows |
+| [Architecture](./docs/architecture.md) | System design, communication patterns, security |
+| [Development Guide](./docs/development.md) | Local setup for all services (Make, Docker, scripts) |
+| [AWS Deployment](./docs/deployment-aws.md) | EC2, Nginx gateway, S3, CloudFront, IAM, CloudWatch |
+| [Auth Service](./docs/services/auth-service.md) | Authentication, RBAC, Kafka events |
+| [Products Service](./docs/services/products-service.md) | Catalog, search, gRPC stock, Kafka |
+| [Frontend](./docs/services/frontend.md) | SPA, roles, build and deploy |
+
+## Architecture at a Glance
+
+```
+                    CloudFront + S3 (Frontend)
+                              |
+                         Web Browser
+                              |
+                    Nginx (API Gateway on EC2)
+                     /                    \
+            Auth Service              Products Service
+            (Laravel)                 (Node.js / DDD)
+                |                           |
+         MySQL + Redis              PostgreSQL + Redis
+                |                     + Elasticsearch
+                |                           |
+                └──────── Kafka ────────────┘
+```
+
+## User Roles
+
+| Role | Capabilities |
+|------|--------------|
+| **Customer** | Browse shop, search products, view details |
+| **Support** | Search and view users |
+| **Admin** | Full CRUD on products/categories, user management, role assignment |
+
+## Production Endpoints
+
+| Service | URL |
+|---------|-----|
+| Auth API | http://54.160.228.203/api/v1 |
+| Auth OpenAPI | http://54.160.228.203/docs/api |
+| Products API | http://54.160.228.203:3001/api/v1 |
+| Products Swagger | http://54.160.228.203:3001/api/docs |
+
+## Quick Start
+
+### Backend Services
+
+Each service is Dockerized with **Makefile** and **bash production scripts**:
+
+```bash
+# Auth Service
+git clone https://github.com/WaelAlQawasmi/ecommerce-auth-service.git
+cd ecommerce-auth-service && bash run-production.sh
+
+# Products Service (set PASSPORT_PUBLIC_KEY from Auth first)
+git clone https://github.com/WaelAlQawasmi/ecommerce-prodacts-service.git
+cd ecommerce-prodacts-service && make docker-up
+```
+
+### Frontend (This Repo)
+
+```bash
+npm install
+npm run dev          # Development at http://localhost:5173
+```
+
+**Production build:**
+
+```bash
+./scripts/build-production.sh        # Linux/macOS
+.\scripts\build-production.ps1       # Windows
+```
+
+Deploy `dist/` to S3 + CloudFront. See [AWS Deployment](./docs/deployment-aws.md).
+
+## Frontend Stack
 
 - Vue 3 + TypeScript + Vite
 - Pinia (state) + Vue Router (lazy routes, role guards)
-- Axios (interceptors, Bearer JWT)
+- Axios (Bearer JWT interceptors)
 - Tailwind CSS 4
 
 ## Security
 
-- JWT stored in `sessionStorage` (cleared on tab close)
-- Auto-redirect on 401
-- Role-based route guards
-- Dev proxy avoids CORS issues
+- JWT (RS256) from Auth Service via Laravel Passport
+- Role-based route guards and API authorization
+- Tokens in `sessionStorage` (cleared on tab close)
+- AWS Security Groups, IAM roles, CloudWatch monitoring
 
-## Getting Started
+## License
 
-```bash
-npm install
-npm run dev
-```
-
-Open [http://localhost:5173](http://localhost:5173).
-
-## Production Build
-
-Copy `.env.example` to `.env.production` and set direct API URLs:
-
-```env
-VITE_AUTH_API_URL=http://54.160.228.203/api/v1
-VITE_PRODUCTS_API_URL=http://54.160.228.203:3001/api/v1
-```
-
-```bash
-npm run build
-npm run preview
-```
-
-## API Documentation
-
-- [Auth Service](http://54.160.228.203/docs/api)
-- [Products Service](http://54.160.228.203:3001/api/docs/#/)
+This project is part of a microservices-based e-commerce platform created for learning, portfolio development, and distributed systems practice.

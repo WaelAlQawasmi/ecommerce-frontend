@@ -4,6 +4,7 @@ import { categoriesApi } from '@/api/products.api'
 import type { Category, CreateCategoryPayload } from '@/types'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import AlertMessage from '@/components/common/AlertMessage.vue'
+import AppModal from '@/components/common/AppModal.vue'
 import { extractErrorMessage } from '@/utils/helpers'
 
 const categories = ref<Category[]>([])
@@ -99,25 +100,37 @@ onMounted(loadData)
       </div>
     </div>
 
-    <div v-if="showForm" class="modal-overlay" @click.self="showForm = false">
-      <div class="modal-content max-w-md">
-        <h2 class="text-xl font-bold tracking-tight">{{ editingId ? 'Edit category' : 'New category' }}</h2>
-        <AlertMessage v-if="formError" :message="formError" class="mt-4" />
-        <form class="mt-6 space-y-4" @submit.prevent="handleSubmit">
-          <div>
-            <label class="label">Name</label>
-            <input v-model="form.name" required class="input" />
-          </div>
-          <div>
-            <label class="label">Description</label>
-            <textarea v-model="form.description" rows="3" class="input" />
-          </div>
-          <div class="flex justify-end gap-3 border-t border-slate-100 pt-4">
-            <button type="button" class="btn btn-secondary" @click="showForm = false">Cancel</button>
-            <button type="submit" class="btn btn-primary" :disabled="submitting">Save</button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <AppModal
+      v-model="showForm"
+      size="sm"
+      :title="editingId ? 'Edit category' : 'New category'"
+      :subtitle="editingId ? 'Update category details' : 'Create a new product category'"
+    >
+      <AlertMessage v-if="formError" :message="formError" class="mb-5" />
+
+      <form id="category-form" class="space-y-5" @submit.prevent="handleSubmit">
+        <div>
+          <label for="category-name" class="label">Category name</label>
+          <input id="category-name" v-model="form.name" required class="input" placeholder="e.g. Electronics" />
+        </div>
+        <div>
+          <label for="category-description" class="label">Description</label>
+          <textarea
+            id="category-description"
+            v-model="form.description"
+            rows="3"
+            class="input resize-none"
+            placeholder="Optional description"
+          />
+        </div>
+      </form>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="showForm = false">Cancel</button>
+        <button type="submit" form="category-form" class="btn btn-primary" :disabled="submitting">
+          {{ submitting ? 'Saving…' : 'Save category' }}
+        </button>
+      </template>
+    </AppModal>
   </div>
 </template>

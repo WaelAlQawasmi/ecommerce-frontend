@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { authApi } from '@/api/auth.api'
 import type { User, Role, RoleSlug } from '@/types'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import AlertMessage from '@/components/common/AlertMessage.vue'
 import Pagination from '@/components/common/Pagination.vue'
+import AppModal from '@/components/common/AppModal.vue'
 import { formatDate, extractErrorMessage } from '@/utils/helpers'
 import { getRoleLabel } from '@/utils/roles'
 
@@ -17,6 +18,13 @@ const totalPages = ref(1)
 const searchEmail = ref('')
 const assigningUserId = ref<number | null>(null)
 const selectedRole = ref<RoleSlug>('customer')
+
+const showAssignModal = computed({
+  get: () => assigningUserId.value !== null,
+  set: (open: boolean) => {
+    if (!open) assigningUserId.value = null
+  },
+})
 
 async function loadUsers() {
   loading.value = true
@@ -152,19 +160,18 @@ onMounted(async () => {
       <Pagination v-model:page="page" :total-pages="totalPages" @update:page="loadUsers()" />
     </div>
 
-    <div v-if="assigningUserId" class="modal-overlay" @click.self="assigningUserId = null">
-      <div class="modal-content max-w-sm">
-        <h2 class="text-xl font-bold tracking-tight">Assign role</h2>
-        <select v-model="selectedRole" class="select mt-5">
-          <option v-for="role in roles" :key="role.id" :value="role.slug">
-            {{ role.name }}
-          </option>
-        </select>
-        <div class="mt-6 flex justify-end gap-3">
-          <button class="btn btn-secondary" @click="assigningUserId = null">Cancel</button>
-          <button class="btn btn-primary" @click="assignRole(assigningUserId!)">Assign</button>
-        </div>
-      </div>
-    </div>
+    <AppModal v-model="showAssignModal" size="sm" title="Assign role" subtitle="Select a role for this user">
+      <label for="assign-role" class="label">Role</label>
+      <select id="assign-role" v-model="selectedRole" class="select">
+        <option v-for="role in roles" :key="role.id" :value="role.slug">
+          {{ role.name }}
+        </option>
+      </select>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="showAssignModal = false">Cancel</button>
+        <button type="button" class="btn btn-primary" @click="assignRole(assigningUserId!)">Assign role</button>
+      </template>
+    </AppModal>
   </div>
 </template>
