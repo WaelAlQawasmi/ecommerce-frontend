@@ -249,12 +249,14 @@ Test structure:
 
 ## API Documentation
 
-- **Local:** http://localhost:3001/api/docs
-- **Production:** http://54.160.228.203:3001/api/docs
+| Environment | Auth (Scramble) | Products (Swagger) |
+|-------------|-----------------|---------------------|
+| Local / dev | http://localhost/docs/api | http://localhost:3001/api/docs |
+| Production | **Disabled** | **Disabled** (`SWAGGER_ENABLED=false`) |
 
 ## Production Deployment
 
-On EC2, the service runs in Docker and is exposed on port **3001**:
+On EC2, the service runs in Docker on **localhost:3001** and is reached only through the Nginx API Gateway:
 
 ```bash
 git clone https://github.com/WaelAlQawasmi/ecommerce-prodacts-service.git
@@ -263,5 +265,7 @@ cp .env.example .env
 # Configure production values
 make docker-up
 ```
+
+Gateway route: `/api/v1/products/*` and `/api/v1/categories/*` → `127.0.0.1:3001`
 
 Ensure `PASSPORT_PUBLIC_KEY` matches the Auth Service and `SWAGGER_ENABLED=false`.

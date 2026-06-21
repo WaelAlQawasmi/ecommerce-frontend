@@ -53,12 +53,24 @@ Full platform documentation lives in the [`docs/`](./docs/README.md) directory:
 
 ## Production Endpoints
 
-| Service | URL |
-|---------|-----|
-| Auth API | http://54.160.228.203/api/v1 |
-| Auth OpenAPI | http://54.160.228.203/docs/api |
-| Products API | http://54.160.228.203:3001/api/v1 |
-| Products Swagger | http://54.160.228.203:3001/api/docs |
+All API traffic goes through a single **Nginx API Gateway** on HTTPS (`443`). Path-based routing sends requests to the correct backend — clients never call service ports directly.
+
+| Resource | URL |
+|----------|-----|
+| API Gateway | `https://54.160.228.203/api/v1` |
+| Auth routes | `https://54.160.228.203/api/v1/auth/*`, `/users/*`, `/roles/*` → Auth (`:8080`) |
+| Products routes | `https://54.160.228.203/api/v1/products/*`, `/categories/*` → Products (`:3001`) |
+
+> **API docs (Swagger / OpenAPI) are disabled in production** for both Auth and Products services. Use local/dev environments for interactive API documentation.
+
+Frontend production env uses the **same gateway base URL** for both services:
+
+```env
+VITE_AUTH_API_URL=https://54.160.228.203/api/v1
+VITE_PRODUCTS_API_URL=https://54.160.228.203/api/v1
+```
+
+See [API Gateway config](./docs/deployment-aws.md#7-configure-nginx-as-api-gateway) for the full Nginx setup.
 
 ## Quick Start
 
@@ -105,6 +117,7 @@ Deploy `dist/` to S3 + CloudFront. See [AWS Deployment](./docs/deployment-aws.md
 - Role-based route guards and API authorization
 - Tokens in `sessionStorage` (cleared on tab close)
 - AWS Security Groups, IAM roles, CloudWatch monitoring
+- Swagger / OpenAPI disabled in production on all backend services
 
 ## License
 

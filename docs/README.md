@@ -44,13 +44,14 @@ The platform supports three user roles:
 
 ## Production Endpoints
 
-| Service | URL |
-|---------|-----|
-| Frontend (CloudFront) | Served from S3 via CloudFront |
-| Auth API | `http://54.160.228.203/api/v1` |
-| Auth OpenAPI | `http://54.160.228.203/docs/api` |
-| Products API | `http://54.160.228.203:3001/api/v1` |
-| Products Swagger | `http://54.160.228.203:3001/api/docs` |
+All backend APIs are exposed through a single **Nginx API Gateway** on HTTPS (`443`). Nginx routes by path — Auth on `:8080`, Products on `:3001` (internal only).
+
+| Resource | URL |
+|----------|-----|
+| Frontend | Served from S3 via CloudFront |
+| API Gateway | `https://54.160.228.203/api/v1` |
+
+> **Swagger / OpenAPI is disabled in production** on both services. Interactive API docs are available in local/dev only.
 
 ## Quick Start (Full Stack Locally)
 

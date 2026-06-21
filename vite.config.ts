@@ -14,13 +14,15 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api/auth': {
-        target: 'http://54.160.228.203',
+        target: 'https://54.160.228.203',
         changeOrigin: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/api\/auth/, '/api/v1'),
       },
       '/api/products': {
-        target: 'http://54.160.228.203:3001',
+        target: 'https://54.160.228.203',
         changeOrigin: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/api\/products/, '/api/v1'),
       },
     },

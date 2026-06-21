@@ -39,9 +39,9 @@ flowchart LR
     end
 
     U -->|HTTPS static assets| CF --> S3
-    U -->|REST + JWT| NGX
-    NGX -->|:80 /api/v1| LA
-    NGX -->|:3001 /api/v1| NA
+    U -->|REST + JWT HTTPS :443| NGX
+    NGX -->|/api/v1/products|categories| NA
+    NGX -->|other /api/v1/*| LA
     LA --> KF
     NA --> KF
     NA -.->|RS256 public key| LA
@@ -70,9 +70,9 @@ flowchart TB
             EC2[EC2 t3.medium\n54.160.228.203]
 
             subgraph Docker["Docker Containers"]
-                NGX[Nginx :80, :3001]
-                AUTH[auth-service\nLaravel PHP-FPM]
-                PROD[products-service\nNode.js :3001]
+                NGX[Nginx :443 SSL\nAPI Gateway]
+                AUTH[auth-service\n127.0.0.1:8080]
+                PROD[products-service\n127.0.0.1:3001]
                 MYSQL[(MySQL :3306)]
                 PG[(PostgreSQL :5432)]
                 REDIS_A[(Redis Auth :6379)]
@@ -82,7 +82,7 @@ flowchart TB
             end
         end
 
-        SG[Security Group\n80, 443, 3001 inbound\n22 from admin IP]
+        SG[Security Group\n443, 80 inbound\n22 from admin IP]
     end
 
     subgraph Monitoring["Observability"]
@@ -116,13 +116,14 @@ flowchart TB
 ```mermaid
 flowchart LR
     subgraph Inbound["Inbound Rules"]
-        I1[HTTP 80\n0.0.0.0/0]
-        I2[HTTPS 443\n0.0.0.0/0]
-        I3[TCP 3001\n0.0.0.0/0]
+        I1[HTTPS 443\n0.0.0.0/0\nAPI Gateway]
+        I2[HTTP 80\n0.0.0.0/0\nOptional redirect]
         I4[SSH 22\nAdmin IP only]
     end
 
     subgraph Blocked["Internal Only — NOT public"]
+        B0[Nginx upstream\nAuth :8080]
+        B0b[Products :3001]
         B1[MySQL 3306]
         B2[PostgreSQL 5432]
         B3[Redis 6379]
@@ -136,38 +137,39 @@ flowchart LR
 
 ## 3. Nginx API Gateway Routing
 
-How Nginx routes traffic to backend services.
+Single HTTPS entry point (`443`) with path-based routing to internal backends.
 
 ```mermaid
 flowchart TB
-    Client[Client Request]
+    Client[Client / Frontend\nHTTPS :443]
 
-    subgraph Nginx["Nginx on EC2"]
-        R80[":80 server block"]
-        R3001[":3001 server block"]
+    subgraph Nginx["Nginx API Gateway\nSSL termination"]
+        PROD_LOC["location ~ ^/api/v1/(products|categories)"]
+        AUTH_LOC["location /api/v1/"]
     end
 
-    subgraph Upstreams
-        AUTH_UP[auth_backend\nLaravel PHP-FPM]
-        PROD_UP[products_backend\nNode.js Express]
+    subgraph Upstreams["Internal (localhost only)"]
+        AUTH_UP["127.0.0.1:8080\nAuth Service"]
+        PROD_UP["127.0.0.1:3001\nProducts Service"]
     end
 
-    Client -->|GET /api/v1/auth/login| R80
-    Client -->|GET /api/v1/users| R80
-    Client -->|GET /docs/api| R80
-    Client -->|GET /api/v1/products| R3001
-    Client -->|GET /api/v1/categories| R3001
+    Client -->|GET /api/v1/auth/login| AUTH_LOC
+    Client -->|GET /api/v1/users| AUTH_LOC
+    Client -->|GET /api/v1/products| PROD_LOC
+    Client -->|GET /api/v1/categories| PROD_LOC
 
-    R80 -->|/api/v1/*| AUTH_UP
-    R80 -->|/docs/*| AUTH_UP
-    R3001 -->|/*| PROD_UP
+    PROD_LOC --> PROD_UP
+    AUTH_LOC --> AUTH_UP
 ```
 
-| Port | Path | Upstream Service |
-|------|------|------------------|
-| 80 | `/api/v1/*` | Auth Service (Laravel) |
-| 80 | `/docs/*` | Auth OpenAPI docs |
-| 3001 | `/api/v1/*` | Products Service (Node.js) |
+| Path | Upstream | Port |
+|------|----------|------|
+| `/api/v1/products/*`, `/api/v1/categories/*` | Products Service | `127.0.0.1:3001` |
+| `/api/v1/*` (auth, users, roles, …) | Auth Service | `127.0.0.1:8080` |
+
+> **Production:** `/docs/*` (Auth) and `/api/docs` (Products) are **disabled** — do not route them through the gateway.
+
+**Note:** The products/categories `location` block must be defined **before** the catch-all `/api/v1/` block in Nginx.
 
 ---
 
@@ -659,7 +661,8 @@ flowchart LR
     end
 
     subgraph Backend
-        AUTH[Auth Service :80]
+        GW[Nginx API Gateway :443]
+        AUTH[Auth Service :8080]
         PROD[Products Service :3001]
     end
 
@@ -669,8 +672,9 @@ flowchart LR
     PINIA --> SS
     AC --> AX
     PC --> AX
-    AX -->|Bearer JWT| AUTH
-    AX -->|Bearer JWT| PROD
+    AX -->|Bearer JWT HTTPS :443| GW[Nginx API Gateway]
+    GW --> AUTH
+    GW --> PROD
     AX -->|401| V
 ```
 
@@ -694,22 +698,22 @@ flowchart TB
     subgraph Prod["Production"]
         CF2[CloudFront]
         S3P[(S3 dist/)]
-        NGX2[Nginx EC2]
-        AUTH_P[Auth Docker]
-        PROD_P[Products Docker]
+        NGX2[Nginx API Gateway\nHTTPS :443]
+        AUTH_P[Auth :8080]
+        PROD_P[Products :3001]
 
         CF2 --> S3P
-        Browser2[Browser] -->|direct API URLs| NGX2
+        Browser2[Browser] -->|https://54.160.228.203/api/v1| NGX2
         Browser2 --> CF2
-        NGX2 --> AUTH_P
-        NGX2 --> PROD_P
+        NGX2 -->|products, categories| PROD_P
+        NGX2 -->|auth, users, roles| AUTH_P
     end
 ```
 
 | Environment | Frontend | Auth API URL | Products API URL |
 |-------------|----------|--------------|------------------|
 | Development | Vite `:5173` | `/api/auth` (proxy) | `/api/products` (proxy) |
-| Production | S3 + CloudFront | `http://54.160.228.203/api/v1` | `http://54.160.228.203:3001/api/v1` |
+| Production | S3 + CloudFront | `https://54.160.228.203/api/v1` | `https://54.160.228.203/api/v1` |
 
 ---
 

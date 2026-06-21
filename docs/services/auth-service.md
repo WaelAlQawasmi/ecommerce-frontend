@@ -274,8 +274,10 @@ See repo files `QUICKSTART.md` and `DOCKER.md` for detailed Docker documentation
 
 ## API Documentation
 
-- **Local:** http://localhost/docs/api
-- **Production:** http://54.160.228.203/docs/api
+Swagger / OpenAPI is **disabled in production**. Use local/dev environments only:
+
+- **Local (Auth):** http://localhost/docs/api
+- **Production:** not available
 
 ## Integration with Products Service
 

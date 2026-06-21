@@ -189,10 +189,10 @@ Open http://localhost:5173.
 
 The Vite dev server proxies API calls to avoid CORS:
 
-| Proxy Path | Target |
-|------------|--------|
-| `/api/auth/*` | `http://54.160.228.203/api/v1/*` |
-| `/api/products/*` | `http://54.160.228.203:3001/api/v1/*` |
+| Proxy Path | Target (via API Gateway) |
+|------------|--------------------------|
+| `/api/auth/*` | `https://54.160.228.203/api/v1/*` |
+| `/api/products/*` | `https://54.160.228.203/api/v1/*` |
 
 Configure proxy targets in `vite.config.ts` for local backend instances.
 
@@ -205,11 +205,11 @@ VITE_AUTH_API_URL=/api/auth
 VITE_PRODUCTS_API_URL=/api/products
 ```
 
-**Production** (`.env.production`):
+**Production** (`.env.production`) — both services share the same API Gateway URL:
 
 ```env
-VITE_AUTH_API_URL=http://54.160.228.203/api/v1
-VITE_PRODUCTS_API_URL=http://54.160.228.203:3001/api/v1
+VITE_AUTH_API_URL=https://54.160.228.203/api/v1
+VITE_PRODUCTS_API_URL=https://54.160.228.203/api/v1
 ```
 
 ### Production Build Scripts

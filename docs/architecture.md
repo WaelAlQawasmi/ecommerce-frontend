@@ -41,9 +41,9 @@ flowchart TB
 
     Browser --> CF
     CF --> S3
-    Browser -->|"REST + JWT"| Nginx
-    Nginx -->|" /api/v1/* "| AuthApp
-    Nginx -->|" :3001 /api/v1/* "| ProductApp
+    Browser -->|"REST + JWT\nHTTPS :443"| Nginx
+    Nginx -->|"/api/v1/products|categories"| ProductApp
+    Nginx -->|"other /api/v1/*"| AuthApp
     AuthApp --> MySQL
     AuthApp --> RedisAuth
     AuthApp -->|"Publish events"| Kafka
@@ -72,7 +72,7 @@ flowchart TB
 | Caching | Redis (user count, session-adjacent data) |
 | Async | Redis queues (welcome email), Kafka event publishing |
 | API style | REST `/api/v1` |
-| Docs | OpenAPI via Scramble |
+| Docs | OpenAPI via Scramble (local/dev only; disabled in production) |
 
 **Publishes to Kafka:**
 
@@ -94,7 +94,7 @@ flowchart TB
 | Reservation TTL | Redis |
 | Auth | RS256 JWT verification (Auth Service public key) |
 | Architecture | DDD layers: domain → application → infrastructure → interfaces |
-| Docs | Swagger UI |
+| Docs | Swagger UI (disabled in production) |
 
 ### Frontend
 
@@ -179,15 +179,18 @@ sequenceDiagram
 
 ## API Gateway (Nginx)
 
-Nginx on EC2 acts as the reverse proxy and API gateway:
+Nginx on EC2 listens on **HTTPS (443)** and acts as the single entry point for all API traffic. Backend services run on localhost only.
 
-| Route | Upstream |
-|-------|----------|
-| `/api/v1/*` (port 80) | Auth Service (Laravel via PHP-FPM) |
-| `:3001/api/v1/*` | Products Service (Node.js) |
-| `/docs/api` | Auth OpenAPI documentation |
+| Path | Upstream |
+|------|----------|
+| `/api/v1/products/*`, `/api/v1/categories/*` | Products Service (`127.0.0.1:3001`) |
+| `/api/v1/*` (auth, users, roles, etc.) | Auth Service (`127.0.0.1:8080`) |
 
-The frontend is **not** served by EC2 Nginx in production — it is hosted on **S3** and delivered through **CloudFront**.
+Swagger / OpenAPI (`/docs/*`, `/api/docs`) is **disabled in production** and not routed through the gateway.
+
+The frontend is **not** served by EC2 Nginx — it is hosted on **S3** and delivered through **CloudFront**.
+
+See [Deployment Guide — Nginx API Gateway](./deployment-aws.md#7-configure-nginx-as-api-gateway) for the full configuration.
 
 ## Security Model
 

@@ -49,10 +49,11 @@ Configure inbound rules based on least privilege:
 
 | Type | Port | Source | Purpose |
 |------|------|--------|---------|
-| HTTP | 80 | 0.0.0.0/0 | Auth API via Nginx |
-| HTTPS | 443 | 0.0.0.0/0 | TLS (recommended) |
-| Custom TCP | 3001 | 0.0.0.0/0 | Products REST API |
+| HTTPS | 443 | 0.0.0.0/0 | Nginx API Gateway (Auth + Products) |
+| HTTP | 80 | 0.0.0.0/0 | Optional redirect to HTTPS |
 | SSH | 22 | Your IP only | Administration |
+
+Do **not** expose backend service ports publicly — `:8080` (Auth) and `:3001` (Products) are internal to EC2 only.
 
 Restrict database ports (3306, 5432, 6379, 9092, 9200) to **internal/VPC only** — never expose them publicly.
 
@@ -138,48 +139,69 @@ make docker-up
 
 ### 7. Configure Nginx as API Gateway
 
-Example Nginx configuration (`/etc/nginx/conf.d/ecommerce.conf`):
+Nginx listens on **HTTPS (443)** and routes by URL path. Backend services bind to localhost only — they are not exposed to the internet.
+
+**Routing rules:**
+
+| Path pattern | Backend | Port |
+|--------------|---------|------|
+| `/api/v1/products/*`, `/api/v1/categories/*` | Products Service | `127.0.0.1:3001` |
+| `/api/v1/*` (everything else) | Auth Service | `127.0.0.1:8080` |
+
+Production configuration (`/etc/nginx/conf.d/ecommerce.conf`):
 
 ```nginx
-upstream auth_backend {
-    server 127.0.0.1:9000;  # PHP-FPM or Docker-mapped port
-}
-
-upstream products_backend {
-    server 127.0.0.1:3001;
-}
-
 server {
-    listen 80;
-    server_name 54.160.228.203;
+    listen 443 ssl default_server;
+    server_name _;
 
-    # Auth Service
-    location /api/v1/ {
-        proxy_pass http://auth_backend;
+    ssl_certificate     /etc/nginx/ssl/nginx.crt;
+    ssl_certificate_key /etc/nginx/ssl/nginx.key;
+
+    # ================= PRODUCTS =================
+    # Must be defined BEFORE the catch-all /api/v1/ block
+    location ~ ^/api/v1/(products|categories)(.*)$ {
+        proxy_pass http://127.0.0.1:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Auth OpenAPI docs
-    location /docs/ {
-        proxy_pass http://auth_backend;
-        proxy_set_header Host $host;
-    }
-}
-
-server {
-    listen 3001;
-    server_name 54.160.228.203;
-
-    location / {
-        proxy_pass http://products_backend;
+    # ================= AUTH =================
+    location /api/v1/ {
+        proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
+
+    # Auth OpenAPI docs — omit in production (Swagger disabled)
+    # location /docs/ {
+    #     proxy_pass http://127.0.0.1:8080;
+    #     proxy_set_header Host $host;
+    #     proxy_set_header X-Real-IP $remote_addr;
+    # }
 }
+```
+
+> **Production:** Swagger / OpenAPI is **disabled** on both services. Do not expose `/docs/` or `/api/docs` through the gateway in production.
+
+```mermaid
+flowchart LR
+    Client[Client / Frontend]
+    NGX[Nginx :443 SSL]
+    AUTH[Auth Service\n127.0.0.1:8080]
+    PROD[Products Service\n127.0.0.1:3001]
+
+    Client -->|/api/v1/auth/*| NGX
+    Client -->|/api/v1/users/*| NGX
+    Client -->|/api/v1/products/*| NGX
+    Client -->|/api/v1/categories/*| NGX
+
+    NGX -->|products, categories| PROD
+    NGX -->|all other /api/v1/| AUTH
 ```
 
 Reload Nginx after changes:
@@ -189,7 +211,7 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-Adjust upstream ports to match your Docker Compose port mappings.
+Adjust upstream ports (`8080`, `3001`) to match your Docker Compose port mappings.
 
 ---
 
@@ -240,8 +262,8 @@ aws s3 sync dist/ s3://your-ecommerce-frontend-bucket --delete
 Vite embeds env vars at build time. Production `.env.production`:
 
 ```env
-VITE_AUTH_API_URL=http://54.160.228.203/api/v1
-VITE_PRODUCTS_API_URL=http://54.160.228.203:3001/api/v1
+VITE_AUTH_API_URL=https://54.160.228.203/api/v1
+VITE_PRODUCTS_API_URL=https://54.160.228.203/api/v1
 ```
 
 Rebuild and re-sync to S3 whenever API URLs change.
@@ -329,7 +351,8 @@ services:
 
 - [ ] Auth Service running with MySQL, Redis, Kafka
 - [ ] Products Service running with PostgreSQL, Redis, Elasticsearch, Kafka
-- [ ] Nginx routing verified (`/api/v1`, port 3001)
+- [ ] `SWAGGER_ENABLED=false` on Products Service; Auth OpenAPI/Scramble disabled in production
+- [ ] Nginx gateway does **not** expose `/docs/` or `/api/docs` publicly
 - [ ] Passport public key synced to Products Service
 
 ### Frontend
@@ -352,10 +375,9 @@ services:
 
 | Resource | URL |
 |----------|-----|
-| Auth API | http://54.160.228.203/api/v1 |
-| Auth Docs | http://54.160.228.203/docs/api |
-| Products API | http://54.160.228.203:3001/api/v1 |
-| Products Swagger | http://54.160.228.203:3001/api/docs |
+| API Gateway | https://54.160.228.203/api/v1 |
+
+Swagger / OpenAPI is **not available** in production (disabled on both services).
 
 Replace with your CloudFront domain for the frontend once configured.
 

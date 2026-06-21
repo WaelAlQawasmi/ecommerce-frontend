@@ -123,16 +123,18 @@ VITE_PRODUCTS_API_URL=/api/products
 
 Vite dev proxy (`vite.config.ts`):
 
-| Proxy | Target |
-|-------|--------|
-| `/api/auth` | `http://54.160.228.203/api/v1` |
-| `/api/products` | `http://54.160.228.203:3001/api/v1` |
+| Proxy | Target (API Gateway) |
+|-------|----------------------|
+| `/api/auth` | `https://54.160.228.203/api/v1` |
+| `/api/products` | `https://54.160.228.203/api/v1` |
 
 ### Production (`.env.production`)
 
+Both clients use the same Nginx API Gateway base URL:
+
 ```env
-VITE_AUTH_API_URL=http://54.160.228.203/api/v1
-VITE_PRODUCTS_API_URL=http://54.160.228.203:3001/api/v1
+VITE_AUTH_API_URL=https://54.160.228.203/api/v1
+VITE_PRODUCTS_API_URL=https://54.160.228.203/api/v1
 ```
 
 Vite embeds these at build time — rebuild when URLs change.
@@ -201,10 +203,10 @@ See [AWS Deployment Guide](../deployment-aws.md) for full CloudFront setup.
 
 ## API Documentation Links
 
-| Service | URL |
-|---------|-----|
-| Auth OpenAPI | http://54.160.228.203/docs/api |
-| Products Swagger | http://54.160.228.203:3001/api/docs |
+| Environment | Auth (Scramble) | Products (Swagger) |
+|-------------|-----------------|---------------------|
+| Local / dev | http://localhost/docs/api | http://localhost:3001/api/docs |
+| Production | **Disabled** | **Disabled** |
 
 ## Customization
 
