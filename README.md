@@ -20,7 +20,7 @@ Full platform documentation lives in the [`docs/`](./docs/README.md) directory:
 | [Diagrams & Schemas](./docs/diagrams.md) | Visual architecture, project structure, ER diagrams, flows |
 | [Architecture](./docs/architecture.md) | System design, communication patterns, security |
 | [Development Guide](./docs/development.md) | Local setup for all services (Make, Docker, scripts) |
-| [AWS Deployment](./docs/deployment-aws.md) | EC2, Nginx gateway, S3, CloudFront, IAM, CloudWatch |
+| [AWS Deployment](./docs/deployment-aws.md) | VPC, ALB, EC2, RDS, ECR, S3, CloudFront, WAF, Shield, SSM, CI/CD |
 | [Auth Service](./docs/services/auth-service.md) | Authentication, RBAC, Kafka events |
 | [Products Service](./docs/services/products-service.md) | Catalog, search, gRPC stock, Kafka |
 | [Frontend](./docs/services/frontend.md) | SPA, roles, build and deploy |
@@ -28,19 +28,27 @@ Full platform documentation lives in the [`docs/`](./docs/README.md) directory:
 ## Architecture at a Glance
 
 ```
-                    CloudFront + S3 (Frontend)
-                              |
-                         Web Browser
-                              |
-                    Nginx (API Gateway on EC2)
-                     /                    \
-            Auth Service              Products Service
-            (Laravel)                 (Node.js / DDD)
-                |                           |
-         MySQL + Redis              PostgreSQL + Redis
-                |                     + Elasticsearch
-                |                           |
-                └──────── Kafka ────────────┘
+              AWS Shield + WAF
+                      |
+         CloudFront + S3 (Frontend SPA)
+                      |
+               Web Browser
+                      |
+         ALB (HTTPS, public subnets)
+                      |
+    ┌─────────────────┴─────────────────┐
+    │            VPC                     │
+    │  Private Subnet (AZ-a)  Private Subnet (AZ-b)
+    │       EC2 (Auth)            EC2 (Products)
+    │    Docker + Nginx         Docker + Nginx
+    │         │                       │
+    │    RDS MySQL              RDS PostgreSQL
+    │    Redis, Kafka           Redis, Elasticsearch, Kafka
+    └───────────────────────────────────┘
+
+    ECR (images) ← VPC Endpoint
+    SSM Parameter Store (config) + IAM roles (EC2, CI/CD)
+    GitHub Actions → build, push ECR, deploy S3/EC2
 ```
 
 ## User Roles
@@ -53,24 +61,25 @@ Full platform documentation lives in the [`docs/`](./docs/README.md) directory:
 
 ## Production Endpoints
 
-All API traffic goes through a single **Nginx API Gateway** on HTTPS (`443`). Path-based routing sends requests to the correct backend — clients never call service ports directly.
+Traffic enters through **AWS Shield**, **WAF**, and **CloudFront** (frontend) or an **Application Load Balancer** (API). EC2 instances run in **private subnets** — no direct public access. **RDS** hosts per-service databases; containers are pulled from **ECR** via a **VPC endpoint**.
 
-| Resource | URL |
-|----------|-----|
-| API Gateway | `https://54.160.228.203/api/v1` |
-| Auth routes | `https://54.160.228.203/api/v1/auth/*`, `/users/*`, `/roles/*` → Auth (`:8080`) |
-| Products routes | `https://54.160.228.203/api/v1/products/*`, `/categories/*` → Products (`:3001`) |
+| Resource | URL / Target |
+|----------|--------------|
+| Frontend | CloudFront distribution → S3 (`https://<cloudfront-domain>`) |
+| API Gateway (ALB) | `https://<alb-dns-name>/api/v1` |
+| Auth routes | `/api/v1/auth/*`, `/users/*`, `/roles/*` → Auth EC2 (`:8080`) |
+| Products routes | `/api/v1/products/*`, `/categories/*` → Products EC2 (`:3001`) |
 
 > **API docs (Swagger / OpenAPI) are disabled in production** for both Auth and Products services. Use local/dev environments for interactive API documentation.
 
-Frontend production env uses the **same gateway base URL** for both services:
+Frontend production env uses the **ALB base URL** for both services:
 
 ```env
-VITE_AUTH_API_URL=https://54.160.228.203/api/v1
-VITE_PRODUCTS_API_URL=https://54.160.228.203/api/v1
+VITE_AUTH_API_URL=https://<alb-dns-name>/api/v1
+VITE_PRODUCTS_API_URL=https://<alb-dns-name>/api/v1
 ```
 
-See [API Gateway config](./docs/deployment-aws.md#7-configure-nginx-as-api-gateway) for the full Nginx setup.
+See [AWS Deployment](./docs/deployment-aws.md) for VPC, ALB, RDS, ECR, WAF, SSM, and GitHub Actions setup.
 
 ## Quick Start
 
@@ -116,8 +125,10 @@ Deploy `dist/` to S3 + CloudFront. See [AWS Deployment](./docs/deployment-aws.md
 - JWT (RS256) from Auth Service via Laravel Passport
 - Role-based route guards and API authorization
 - Tokens in `sessionStorage` (cleared on tab close)
-- AWS Security Groups, IAM roles, CloudWatch monitoring
-- Swagger / OpenAPI disabled in production on all backend services
+- VPC with private subnets — EC2 and RDS not publicly reachable
+- ALB + AWS WAF + Shield for edge protection
+- Security groups, IAM roles (EC2 + CI/CD), SSM Parameter Store for secrets/config
+- CloudWatch monitoring; Swagger / OpenAPI disabled in production
 
 ## License
 

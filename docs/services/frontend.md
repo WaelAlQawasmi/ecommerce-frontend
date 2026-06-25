@@ -125,16 +125,16 @@ Vite dev proxy (`vite.config.ts`):
 
 | Proxy | Target (API Gateway) |
 |-------|----------------------|
-| `/api/auth` | `https://54.160.228.203/api/v1` |
-| `/api/products` | `https://54.160.228.203/api/v1` |
+| `/api/auth` | `https://<alb-dns-name>/api/v1` |
+| `/api/products` | `https://<alb-dns-name>/api/v1` |
 
 ### Production (`.env.production`)
 
 Both clients use the same Nginx API Gateway base URL:
 
 ```env
-VITE_AUTH_API_URL=https://54.160.228.203/api/v1
-VITE_PRODUCTS_API_URL=https://54.160.228.203/api/v1
+VITE_AUTH_API_URL=https://<alb-dns-name>/api/v1
+VITE_PRODUCTS_API_URL=https://<alb-dns-name>/api/v1
 ```
 
 Vite embeds these at build time — rebuild when URLs change.

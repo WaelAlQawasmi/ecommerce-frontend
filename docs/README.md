@@ -17,7 +17,7 @@ Distributed e-commerce platform built as a **microservices architecture** with t
 | [Diagrams & Schemas](./diagrams.md) | **Visual illustrations** — architecture, structure, ER diagrams, flows |
 | [Architecture](./architecture.md) | System design, service boundaries, communication patterns |
 | [Development Guide](./development.md) | Local setup for all services (Make, Docker, scripts) |
-| [AWS Deployment](./deployment-aws.md) | Production infrastructure on EC2, S3, CloudFront, Nginx |
+| [AWS Deployment](./deployment-aws.md) | VPC, ALB, EC2, RDS, ECR, S3, CloudFront, WAF, SSM, CI/CD |
 | [Auth Service](./services/auth-service.md) | Authentication, authorization, Kafka events, API reference |
 | [Products Service](./services/products-service.md) | Catalog, search, stock reservation, gRPC, Kafka |
 | [Frontend](./services/frontend.md) | Vue SPA, roles, build scripts, environment configuration |
@@ -44,12 +44,12 @@ The platform supports three user roles:
 
 ## Production Endpoints
 
-All backend APIs are exposed through a single **Nginx API Gateway** on HTTPS (`443`). Nginx routes by path — Auth on `:8080`, Products on `:3001` (internal only).
+Backend APIs are exposed through an **Application Load Balancer** in public subnets. EC2 runs in **private subnets**; databases live on **RDS**. The frontend is served from **S3 via CloudFront** with **WAF** and **Shield**.
 
 | Resource | URL |
 |----------|-----|
-| Frontend | Served from S3 via CloudFront |
-| API Gateway | `https://54.160.228.203/api/v1` |
+| Frontend | `https://<cloudfront-domain>` (S3 + CloudFront + WAF) |
+| API Gateway (ALB) | `https://<alb-dns-name>/api/v1` |
 
 > **Swagger / OpenAPI is disabled in production** on both services. Interactive API docs are available in local/dev only.
 
@@ -84,7 +84,8 @@ See [Development Guide](./development.md) for detailed setup and [AWS Deployment
 - **TDD** — Test-driven development on Auth (PHPUnit) and Products (Jest)
 - **DDD** — Domain-Driven Design in the Products service
 - **Docker-first** — Each service ships with Docker Compose, Nginx, and health checks
-- **API Gateway** — Nginx on EC2 routes traffic to backend services
+- **API Gateway** — ALB + Nginx path-based routing to backend services
+- **CI/CD** — GitHub Actions with IAM OIDC, ECR, and S3 deploy
 
 ## License
 

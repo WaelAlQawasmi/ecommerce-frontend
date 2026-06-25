@@ -54,82 +54,94 @@ flowchart LR
 
 ## 2. AWS Production Infrastructure
 
-Detailed deployment topology on AWS.
+Detailed deployment topology on AWS (VPC, private subnets, ALB, RDS, ECR, WAF).
 
 ```mermaid
 flowchart TB
     Internet((Internet))
 
     subgraph Edge["Edge Layer"]
+        Shield[AWS Shield]
+        WAF[AWS WAF]
         CF[CloudFront Distribution]
         S3[(S3 Bucket\necommerce-frontend)]
     end
 
     subgraph VPC["VPC"]
-        subgraph PublicSubnet["Public Subnet"]
-            EC2[EC2 t3.medium\n54.160.228.203]
-
-            subgraph Docker["Docker Containers"]
-                NGX[Nginx :443 SSL\nAPI Gateway]
-                AUTH[auth-service\n127.0.0.1:8080]
-                PROD[products-service\n127.0.0.1:3001]
-                MYSQL[(MySQL :3306)]
-                PG[(PostgreSQL :5432)]
-                REDIS_A[(Redis Auth :6379)]
-                REDIS_P[(Redis Products)]
-                ES[(Elasticsearch :9200)]
-                KAFKA{{Kafka :9092}}
-            end
+        subgraph PublicSubnet["Public Subnets"]
+            ALB[Application Load Balancer\nHTTPS :443]
         end
 
-        SG[Security Group\n443, 80 inbound\n22 from admin IP]
+        subgraph PrivateSubnet["Private Subnets (2 AZs)"]
+            EC2Auth[EC2 — Auth Service]
+            EC2Prod[EC2 — Products Service]
+            NGX[Nginx\npath-based routing]
+            REDIS_A[(Redis Auth)]
+            REDIS_P[(Redis Products)]
+            ES[(Elasticsearch)]
+            KAFKA{{Kafka}}
+        end
+
+        subgraph RDSLayer["RDS"]
+            MYSQL[(RDS MySQL\nAuth DB)]
+            PG[(RDS PostgreSQL\nProducts DB)]
+        end
+
+        VPCE[VPC Endpoint\nECR]
     end
 
-    subgraph Monitoring["Observability"]
+    subgraph Monitoring["Observability & Config"]
         CW_LOGS[CloudWatch Logs]
         CW_METRICS[CloudWatch Metrics]
-        CW_ALARMS[CloudWatch Alarms]
+        SSM[SSM Parameter Store]
     end
 
-    IAM[IAM Instance Role\nS3 deploy + CloudWatch agent]
+    IAM[IAM Roles\nEC2 + GitHub Actions OIDC]
+    GHA[GitHub Actions\nCI/CD]
 
-    Internet --> CF
-    CF --> S3
-    Internet -->|API traffic| SG --> EC2
-    NGX --> AUTH
-    NGX --> PROD
-    AUTH --> MYSQL
-    AUTH --> REDIS_A
-    AUTH --> KAFKA
-    PROD --> PG
-    PROD --> REDIS_P
-    PROD --> ES
-    PROD --> KAFKA
-    EC2 --> IAM
-    EC2 --> CW_LOGS
-    EC2 --> CW_METRICS
-    CW_METRICS --> CW_ALARMS
+    Internet --> Shield --> WAF
+    WAF --> CF --> S3
+    Internet -->|API| ALB --> NGX
+    NGX --> EC2Auth
+    NGX --> EC2Prod
+    EC2Auth --> MYSQL
+    EC2Prod --> PG
+    EC2Auth --> REDIS_A
+    EC2Auth --> KAFKA
+    EC2Prod --> REDIS_P
+    EC2Prod --> ES
+    EC2Prod --> KAFKA
+    EC2Auth --> VPCE
+    EC2Prod --> VPCE
+    EC2Auth --> SSM
+    EC2Prod --> SSM
+    EC2Auth --> IAM
+    EC2Prod --> IAM
+    EC2Auth --> CW_LOGS
+    EC2Prod --> CW_LOGS
+    GHA -->|push images| VPCE
+    GHA -->|sync dist/| S3
 ```
 
 ### Security Group Rules
 
 ```mermaid
 flowchart LR
-    subgraph Inbound["Inbound Rules"]
-        I1[HTTPS 443\n0.0.0.0/0\nAPI Gateway]
-        I2[HTTP 80\n0.0.0.0/0\nOptional redirect]
-        I4[SSH 22\nAdmin IP only]
+    subgraph Public["Public-Facing"]
+        P1[ALB HTTPS 443\n0.0.0.0/0]
+        P2[CloudFront + WAF\nedge protection]
     end
 
-    subgraph Blocked["Internal Only — NOT public"]
-        B0[Nginx upstream\nAuth :8080]
-        B0b[Products :3001]
-        B1[MySQL 3306]
-        B2[PostgreSQL 5432]
-        B3[Redis 6379]
-        B4[Kafka 9092]
-        B5[Elasticsearch 9200]
-        B6[gRPC 50051]
+    subgraph Private["Private Only"]
+        B0[EC2 from ALB SG only]
+        B1[RDS MySQL 3306\nAuth EC2 SG]
+        B2[RDS PostgreSQL 5432\nProducts EC2 SG]
+        B3[Redis, Kafka, ES\nVPC internal]
+        B4[ECR via VPC Endpoint]
+    end
+
+    subgraph Admin["Admin Access"]
+        A1[SSM Session Manager\nno SSH from internet]
     end
 ```
 
@@ -137,13 +149,15 @@ flowchart LR
 
 ## 3. Nginx API Gateway Routing
 
-Single HTTPS entry point (`443`) with path-based routing to internal backends.
+ALB terminates HTTPS and forwards to Nginx on EC2. Nginx routes by path to internal backends.
 
 ```mermaid
 flowchart TB
-    Client[Client / Frontend\nHTTPS :443]
+    Client[Client / Frontend]
 
-    subgraph Nginx["Nginx API Gateway\nSSL termination"]
+    ALB[ALB\nHTTPS :443]
+
+    subgraph Nginx["Nginx on EC2\n(private subnet)"]
         PROD_LOC["location ~ ^/api/v1/(products|categories)"]
         AUTH_LOC["location /api/v1/"]
     end
@@ -153,10 +167,11 @@ flowchart TB
         PROD_UP["127.0.0.1:3001\nProducts Service"]
     end
 
-    Client -->|GET /api/v1/auth/login| AUTH_LOC
-    Client -->|GET /api/v1/users| AUTH_LOC
-    Client -->|GET /api/v1/products| PROD_LOC
-    Client -->|GET /api/v1/categories| PROD_LOC
+    Client --> ALB
+    ALB -->|GET /api/v1/auth/login| AUTH_LOC
+    ALB -->|GET /api/v1/users| AUTH_LOC
+    ALB -->|GET /api/v1/products| PROD_LOC
+    ALB -->|GET /api/v1/categories| PROD_LOC
 
     PROD_LOC --> PROD_UP
     AUTH_LOC --> AUTH_UP
@@ -696,15 +711,17 @@ flowchart TB
     end
 
     subgraph Prod["Production"]
-        CF2[CloudFront]
+        CF2[CloudFront + WAF]
         S3P[(S3 dist/)]
-        NGX2[Nginx API Gateway\nHTTPS :443]
+        ALB2[ALB\nHTTPS :443]
+        NGX2[Nginx\npath routing]
         AUTH_P[Auth :8080]
         PROD_P[Products :3001]
 
         CF2 --> S3P
-        Browser2[Browser] -->|https://54.160.228.203/api/v1| NGX2
+        Browser2[Browser] -->|https://<alb-dns>/api/v1| ALB2
         Browser2 --> CF2
+        ALB2 --> NGX2
         NGX2 -->|products, categories| PROD_P
         NGX2 -->|auth, users, roles| AUTH_P
     end
@@ -713,36 +730,45 @@ flowchart TB
 | Environment | Frontend | Auth API URL | Products API URL |
 |-------------|----------|--------------|------------------|
 | Development | Vite `:5173` | `/api/auth` (proxy) | `/api/products` (proxy) |
-| Production | S3 + CloudFront | `https://54.160.228.203/api/v1` | `https://54.160.228.203/api/v1` |
+| Production | S3 + CloudFront + WAF | `https://<alb-dns-name>/api/v1` | `https://<alb-dns-name>/api/v1` |
 
 ---
 
-## 14. Build & Deploy Pipeline
+## 14. Build & Deploy Pipeline (GitHub Actions)
 
 ```mermaid
 flowchart LR
-    subgraph AuthDeploy["Auth Service"]
-        A1[git pull]
-        A2[bash run-production.sh]
-        A3[Docker Compose up]
-        A1 --> A2 --> A3
+    subgraph AuthDeploy["Auth Service CI/CD"]
+        A1[Push to main]
+        A2[PHPUnit tests]
+        A3[Docker build]
+        A4[Push to ECR]
+        A5[SSM deploy on EC2]
+        A1 --> A2 --> A3 --> A4 --> A5
     end
 
-    subgraph ProdDeploy["Products Service"]
-        P1[git pull]
-        P2[make docker-up]
-        P3[Docker Compose up]
-        P1 --> P2 --> P3
+    subgraph ProdDeploy["Products Service CI/CD"]
+        P1[Push to main]
+        P2[Jest tests]
+        P3[Docker build]
+        P4[Push to ECR]
+        P5[SSM deploy on EC2]
+        P1 --> P2 --> P3 --> P4 --> P5
     end
 
-    subgraph FrontDeploy["Frontend"]
-        F1[npm ci]
-        F2[build-production.sh]
+    subgraph FrontDeploy["Frontend CI/CD"]
+        F1[Push to main]
+        F2[npm ci + build]
         F3[dist/ folder]
         F4[aws s3 sync]
         F5[CloudFront invalidation]
         F1 --> F2 --> F3 --> F4 --> F5
     end
+
+    OIDC[IAM OIDC Role\nGitHub Actions]
+    OIDC -.-> AuthDeploy
+    OIDC -.-> ProdDeploy
+    OIDC -.-> FrontDeploy
 ```
 
 ---
