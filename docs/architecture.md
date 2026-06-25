@@ -177,9 +177,9 @@ sequenceDiagram
 | Products | PostgreSQL | Redis | Elasticsearch | Kafka |
 | Frontend | — (stateless) | sessionStorage (JWT) | — | — |
 
-## API Gateway (Nginx)
+## API Gateway (ALB + Nginx)
 
-Nginx on EC2 listens on **HTTPS (443)** and acts as the single entry point for all API traffic. Backend services run on localhost only.
+An **Application Load Balancer** in public subnets is the public API entry point (HTTPS via ACM). Traffic is forwarded to **Nginx on EC2** in private subnets, which routes by path. Backend services bind to localhost only.
 
 | Path | Upstream |
 |------|----------|
@@ -188,19 +188,21 @@ Nginx on EC2 listens on **HTTPS (443)** and acts as the single entry point for a
 
 Swagger / OpenAPI (`/docs/*`, `/api/docs`) is **disabled in production** and not routed through the gateway.
 
-The frontend is **not** served by EC2 Nginx — it is hosted on **S3** and delivered through **CloudFront**.
+The frontend is hosted on **S3** and delivered through **CloudFront** with **WAF** and **Shield** — not through EC2.
 
-See [Deployment Guide — Nginx API Gateway](./deployment-aws.md#7-configure-nginx-as-api-gateway) for the full configuration.
+See [AWS Deployment Guide](./deployment-aws.md) for VPC, ALB, RDS, ECR, and Nginx configuration.
 
 ## Security Model
 
 | Layer | Control |
 |-------|---------|
-| Network | AWS Security Groups (restrict inbound to 80, 443, 3001 as needed) |
-| Identity | IAM roles for EC2 instance access to CloudWatch, S3 deploy |
+| Edge | AWS Shield, WAF on CloudFront and ALB |
+| Network | VPC, private subnets, security groups (ALB → EC2 → RDS only) |
+| Identity | IAM roles for EC2 and GitHub Actions OIDC |
+| Configuration | SSM Parameter Store for secrets (not in git) |
 | Application | OAuth2 / JWT, RBAC, rate limiting, Helmet headers |
-| Transport | HTTPS via CloudFront (frontend), TLS configurable on Nginx |
-| Secrets | Passport keys, DB credentials in `.env` (never committed) |
+| Transport | HTTPS via ACM on ALB and CloudFront |
+| Admin | SSM Session Manager (no public SSH) |
 
 ## Testing Strategy (TDD)
 

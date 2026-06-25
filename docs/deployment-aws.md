@@ -1,73 +1,193 @@
 # AWS Deployment Guide
 
-Production deployment uses **AWS EC2** for backend microservices, **S3 + CloudFront** for the frontend, **Nginx** as the API gateway, and **CloudWatch** for observability.
+Production runs in a **VPC** with **private subnets**, **EC2** for microservices, **RDS** per service, **ECR** for container images, **ALB** as the API entry point, **S3 + CloudFront + WAF + Shield** for the frontend, **SSM** for configuration, **IAM roles** for access, and **GitHub Actions** for CI/CD.
 
 ## Infrastructure Overview
 
 ```mermaid
-flowchart LR
-    User["Users"] --> CF["CloudFront"]
+flowchart TB
+    User["Users"] --> Shield["AWS Shield"]
+    Shield --> WAF["AWS WAF"]
+    WAF --> CF["CloudFront"]
     CF --> S3["S3\n(Frontend static files)"]
-    User -->|"API calls"| EC2["EC2 Instance"]
-    
-    subgraph EC2["EC2 Instance"]
-        Nginx["Nginx\n(API Gateway)"]
-        Auth["Auth Service\n(Docker)"]
-        Products["Products Service\n(Docker)"]
-        Nginx --> Auth
-        Nginx --> Products
+    User -->|"API calls"| ALB["Application Load Balancer\n(HTTPS)"]
+
+    subgraph VPC["VPC"]
+        subgraph PublicSubnets["Public Subnets"]
+            ALB
+        end
+
+        subgraph PrivateSubnets["Private Subnets (2 AZs)"]
+            EC2Auth["EC2 — Auth Service\n(Docker)"]
+            EC2Prod["EC2 — Products Service\n(Docker)"]
+            NGX["Nginx\n(path-based routing)"]
+        end
+
+        subgraph Data["Managed Data"]
+            RDSAuth["RDS MySQL\n(Auth)"]
+            RDSProd["RDS PostgreSQL\n(Products)"]
+        end
+
+        VPCE["VPC Endpoint\n(ECR)"]
     end
 
-    EC2 --> CW["CloudWatch\nLogs & Metrics"]
-    EC2 --> IAM["IAM Role"]
-    SG["Security Groups"] -.-> EC2
+    ALB --> NGX
+    NGX --> EC2Auth
+    NGX --> EC2Prod
+    EC2Auth --> RDSAuth
+    EC2Prod --> RDSProd
+    EC2Auth --> VPCE
+    EC2Prod --> VPCE
+
+    SSM["SSM Parameter Store\n(config & secrets)"]
+    IAM["IAM Roles\n(EC2 + GitHub Actions)"]
+    CW["CloudWatch\nLogs & Metrics"]
+    GHA["GitHub Actions\n(CI/CD)"]
+
+    EC2Auth -.-> SSM
+    EC2Prod -.-> SSM
+    EC2Auth -.-> IAM
+    EC2Prod -.-> IAM
+    EC2Auth -.-> CW
+    EC2Prod -.-> CW
+    GHA -->|"push images"| ECR["ECR"]
+    GHA -->|"sync dist/"| S3
+    GHA -->|"deploy"| EC2Auth
+    GHA -->|"deploy"| EC2Prod
+    ECR --> VPCE
 ```
 
 ## Components
 
 | Component | AWS Service | Purpose |
 |-----------|-------------|---------|
-| Backend services | EC2 | Host Docker containers (Auth, Products, Kafka, databases) |
-| API Gateway | Nginx (on EC2) | Reverse proxy, route `/api/v1` to services |
+| Network | VPC + 2 private subnets | Isolate EC2 and RDS; multi-AZ layout |
+| Backend services | EC2 (private subnets) | Host Docker containers (Auth, Products, Redis, Kafka, ES) |
+| Databases | RDS (MySQL + PostgreSQL) | Managed per-service persistence |
+| Container registry | ECR + VPC endpoint | Private image pulls without internet gateway |
+| API entry | ALB + Nginx (on EC2) | HTTPS termination at ALB; path routing to services |
 | Frontend | S3 + CloudFront | Static SPA hosting with CDN |
+| Edge protection | AWS WAF + Shield | DDoS mitigation and request filtering |
+| Configuration | SSM Parameter Store | Secrets and environment config |
+| Access control | IAM roles | EC2 instance role + GitHub Actions OIDC role |
+| CI/CD | GitHub Actions | Build, test, push ECR, deploy backend and frontend |
 | Logging | CloudWatch | Centralized logs and metrics |
-| Access control | IAM | EC2 instance role for AWS API access |
-| Network | Security Groups | Inbound/outbound traffic rules |
+| Network rules | Security Groups | Least-privilege inbound/outbound |
+
+## VPC & Networking
+
+### Layout
+
+| Layer | Subnets | Resources |
+|-------|---------|-----------|
+| Edge | — | CloudFront, WAF, Shield |
+| Public | 2 AZs | ALB, NAT Gateway (for outbound from private subnets) |
+| Private | 2 AZs | EC2 (Auth, Products), Nginx |
+| Data | Private | RDS MySQL (Auth), RDS PostgreSQL (Products) |
+
+### VPC Endpoints
+
+| Endpoint | Type | Purpose |
+|----------|------|---------|
+| ECR API + ECR DKR | Interface | Pull container images without public internet |
+| SSM / SSMMessages / EC2Messages | Interface | SSM Session Manager and Parameter Store access |
+| S3 | Gateway (optional) | Frontend artifact uploads from CI/CD |
+
+### Security Groups
+
+| Group | Inbound | Outbound |
+|-------|---------|----------|
+| ALB | HTTPS 443 from `0.0.0.0/0` | EC2 app ports (8080, 3001, 443) |
+| EC2 (Auth / Products) | From ALB security group only | RDS, Redis, Kafka, VPC endpoints, CloudWatch |
+| RDS (Auth) | MySQL 3306 from Auth EC2 SG | — |
+| RDS (Products) | PostgreSQL 5432 from Products EC2 SG | — |
+
+Do **not** expose backend service ports, SSH, or database ports to the public internet. Use **SSM Session Manager** for admin access to private EC2 instances.
+
+---
+
+## RDS (Per Service)
+
+Each microservice uses a dedicated **RDS** instance instead of containerized databases.
+
+| Service | Engine | Notes |
+|---------|--------|-------|
+| Auth | RDS MySQL 8 | Multi-AZ recommended; SG allows Auth EC2 only |
+| Products | RDS PostgreSQL | Multi-AZ recommended; SG allows Products EC2 only |
+
+Store connection strings in **SSM Parameter Store** (e.g. `/ecommerce/auth/DB_HOST`, `/ecommerce/products/DATABASE_URL`). EC2 instances read them at deploy time via the IAM instance role.
+
+Redis, Elasticsearch, and Kafka remain on EC2 in Docker (or migrate to ElastiCache / OpenSearch / MSK as needed).
+
+---
+
+## ECR & Container Deployment
+
+### 1. Create ECR Repositories
+
+```bash
+aws ecr create-repository --repository-name ecommerce/auth-service
+aws ecr create-repository --repository-name ecommerce/products-service
+```
+
+### 2. VPC Endpoint for ECR
+
+Create interface VPC endpoints for `com.amazonaws.<region>.ecr.api` and `com.amazonaws.<region>.ecr.dkr` so private EC2 instances can pull images without a public IP.
+
+### 3. Build & Push (local or CI)
+
+```bash
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
+
+docker build -t ecommerce/auth-service .
+docker tag ecommerce/auth-service:latest <account-id>.dkr.ecr.us-east-1.amazonaws.com/ecommerce/auth-service:latest
+docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/ecommerce/auth-service:latest
+```
+
+### 4. Pull on EC2
+
+EC2 instances in private subnets pull from ECR via the VPC endpoint. The IAM instance role needs `AmazonEC2ContainerRegistryReadOnly`.
+
+---
+
+## Application Load Balancer (ALB)
+
+The **ALB** sits in public subnets and is the sole public API entry point.
+
+| Setting | Value |
+|---------|-------|
+| Scheme | Internet-facing |
+| Listener | HTTPS 443 (ACM certificate) |
+| Target group | EC2 instance(s) running Nginx on 443 or 80 |
+| Health check | `/api/v1/health` or Nginx `/` |
+
+Attach **AWS WAF** to the ALB (and CloudFront) for rate limiting, geo blocking, and managed rule sets.
+
+---
 
 ## EC2 Backend Deployment
 
-### 1. Launch EC2 Instance
+### 1. Launch EC2 Instances (Private Subnets)
 
 - **AMI:** Amazon Linux 2023 or Ubuntu 22.04 LTS
 - **Instance type:** t3.medium or larger (Elasticsearch + Kafka need memory)
+- **Subnet:** Private subnet (one per AZ for high availability)
+- **Public IP:** Disabled — access via SSM Session Manager
 - **Storage:** 30 GB+ EBS volume
-- **Key pair:** For SSH access
+- **IAM role:** Attach instance profile (see below)
 
-### 2. Security Groups
+### 2. IAM Role for EC2
 
-Configure inbound rules based on least privilege:
+Attach an IAM role to each EC2 instance:
 
-| Type | Port | Source | Purpose |
-|------|------|--------|---------|
-| HTTPS | 443 | 0.0.0.0/0 | Nginx API Gateway (Auth + Products) |
-| HTTP | 80 | 0.0.0.0/0 | Optional redirect to HTTPS |
-| SSH | 22 | Your IP only | Administration |
-
-Do **not** expose backend service ports publicly — `:8080` (Auth) and `:3001` (Products) are internal to EC2 only.
-
-Restrict database ports (3306, 5432, 6379, 9092, 9200) to **internal/VPC only** — never expose them publicly.
-
-Outbound: allow all (or restrict to required AWS endpoints for CloudWatch, S3).
-
-### 3. IAM Role for EC2
-
-Attach an IAM role to the EC2 instance with policies such as:
-
-| Policy | Purpose |
-|--------|---------|
+| Policy / Permission | Purpose |
+|---------------------|---------|
 | `CloudWatchAgentServerPolicy` | Ship logs and metrics to CloudWatch |
-| `AmazonS3FullAccess` (or scoped bucket policy) | Deploy frontend artifacts to S3 |
-| Custom policy | Least-privilege access to specific resources |
+| `AmazonEC2ContainerRegistryReadOnly` | Pull images from ECR via VPC endpoint |
+| `AmazonSSMReadOnlyAccess` | Read SSM Parameter Store config |
+| Custom S3 policy (scoped) | Optional — frontend deploy from instance |
+| Custom policy | Least-privilege RDS, SSM paths, CloudWatch log groups |
 
 Example custom S3 policy (scoped to frontend bucket):
 
@@ -87,11 +207,25 @@ Example custom S3 policy (scoped to frontend bucket):
 }
 ```
 
+### 3. SSM Parameter Store
+
+Store production secrets and config in SSM (SecureString for passwords):
+
+| Parameter | Example path |
+|-----------|--------------|
+| Auth DB host | `/ecommerce/auth/DB_HOST` |
+| Auth DB credentials | `/ecommerce/auth/DB_PASSWORD` |
+| Products DB URL | `/ecommerce/products/DATABASE_URL` |
+| Passport keys | `/ecommerce/auth/PASSPORT_*` |
+| Kafka broker | `/ecommerce/shared/KAFKA_BROKER` |
+
+Deploy scripts or GitHub Actions fetch these at runtime using the instance / OIDC IAM role.
+
 ### 4. Install Dependencies on EC2
 
 ```bash
-# SSH into instance
-ssh -i your-key.pem ec2-user@54.160.228.203
+# Connect via SSM Session Manager (no SSH key needed)
+aws ssm start-session --target i-xxxxxxxxxxxxxxxxx
 
 # Install Docker
 sudo yum update -y
@@ -112,34 +246,39 @@ sudo systemctl enable nginx
 ### 5. Deploy Auth Service
 
 ```bash
+# Pull from ECR (example)
+docker pull <account-id>.dkr.ecr.us-east-1.amazonaws.com/ecommerce/auth-service:latest
+
+# Or clone and build locally on the instance
 git clone https://github.com/WaelAlQawasmi/ecommerce-auth-service.git
 cd ecommerce-auth-service
 
-# Configure production .env (DB passwords, Passport keys, Kafka broker)
+# Configure production .env from SSM parameters (DB_HOST → RDS endpoint)
 cp .env.example .env
-# Edit .env with production values
+# Edit .env — point DB_* to RDS MySQL, not localhost
 
 bash run-production.sh
-# Or: docker-compose up -d --build
 ```
 
 ### 6. Deploy Products Service
 
 ```bash
+docker pull <account-id>.dkr.ecr.us-east-1.amazonaws.com/ecommerce/products-service:latest
+
 git clone https://github.com/WaelAlQawasmi/ecommerce-prodacts-service.git
 cd ecommerce-prodacts-service
 
 cp .env.example .env
+# Set DATABASE_URL to RDS PostgreSQL endpoint (from SSM)
 # Set PASSPORT_PUBLIC_KEY from Auth Service
 # Set NODE_ENV=production, SWAGGER_ENABLED=false
 
 make docker-up
-# Or production-equivalent docker-compose command
 ```
 
 ### 7. Configure Nginx as API Gateway
 
-Nginx listens on **HTTPS (443)** and routes by URL path. Backend services bind to localhost only — they are not exposed to the internet.
+Nginx on EC2 receives traffic from the **ALB** and routes by URL path. Backend services bind to localhost only.
 
 **Routing rules:**
 
@@ -215,7 +354,9 @@ Adjust upstream ports (`8080`, `3001`) to match your Docker Compose port mapping
 
 ---
 
-## Frontend Deployment (S3 + CloudFront)
+## Frontend Deployment (S3 + CloudFront + WAF)
+
+Protected by **AWS WAF** and **Shield** at the CloudFront edge.
 
 ### 1. Build Locally or in CI
 
@@ -251,22 +392,82 @@ aws s3 sync dist/ s3://your-ecommerce-frontend-bucket --delete
 
 | Setting | Value |
 |---------|-------|
-| Origin | S3 bucket (or S3 website endpoint) |
+| Origin | S3 bucket (OAC recommended) |
 | Default root object | `index.html` |
 | Viewer protocol | Redirect HTTP to HTTPS |
 | Custom error response | 403/404 → `/index.html` (200) for SPA routing |
 | Cache behavior | Cache static assets; short TTL or no-cache for `index.html` |
+| WAF | Associate AWS WAF web ACL |
+| Shield | Standard (automatic) or Advanced (optional) |
 
 ### 5. Environment Variables at Build Time
 
 Vite embeds env vars at build time. Production `.env.production`:
 
 ```env
-VITE_AUTH_API_URL=https://54.160.228.203/api/v1
-VITE_PRODUCTS_API_URL=https://54.160.228.203/api/v1
+VITE_AUTH_API_URL=https://<alb-dns-name>/api/v1
+VITE_PRODUCTS_API_URL=https://<alb-dns-name>/api/v1
 ```
 
 Rebuild and re-sync to S3 whenever API URLs change.
+
+---
+
+## CI/CD (GitHub Actions)
+
+Each repository deploys independently via **GitHub Actions** with an **IAM OIDC role** (no long-lived AWS keys).
+
+### IAM Role for GitHub Actions
+
+1. Create an OIDC identity provider for `token.actions.githubusercontent.com`.
+2. Create an IAM role with trust policy scoped to your repo (`repo:WaelAlQawasmi/ecommerce-*`).
+3. Attach policies: ECR push, S3 sync, SSM read, EC2/SSM deploy (as needed).
+
+### Typical Workflow (Frontend)
+
+```yaml
+name: Deploy Frontend
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci && npm run build
+        env:
+          VITE_AUTH_API_URL: ${{ secrets.VITE_AUTH_API_URL }}
+          VITE_PRODUCTS_API_URL: ${{ secrets.VITE_PRODUCTS_API_URL }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::<account-id>:role/github-actions-deploy
+          aws-region: us-east-1
+
+      - run: aws s3 sync dist/ s3://your-ecommerce-frontend-bucket --delete
+
+      - run: aws cloudfront create-invalidation --distribution-id ${{ secrets.CF_DIST_ID }} --paths "/*"
+```
+
+### Typical Workflow (Backend)
+
+1. Run tests (PHPUnit / Jest).
+2. Build Docker image.
+3. Push to **ECR**.
+4. SSM Run Command on private EC2 to pull the new image and restart containers.
+
+Store `VITE_*` URLs, bucket names, and distribution IDs in **GitHub Secrets**; store DB passwords and Passport keys in **SSM Parameter Store**.
 
 ---
 
@@ -338,36 +539,41 @@ services:
 
 ## Production Checklist
 
-### Security
+### Network & Security
 
-- [ ] Security groups restrict SSH to admin IPs only
-- [ ] Database and Kafka ports not exposed publicly
-- [ ] Passport private key stored securely (not in git)
+- [ ] VPC with private subnets for EC2 and RDS
+- [ ] EC2 has no public IP; admin access via SSM Session Manager
+- [ ] ALB is the only public API entry; WAF attached to ALB and CloudFront
+- [ ] Security groups: ALB → EC2 only; EC2 → RDS only
+- [ ] RDS not publicly accessible; Multi-AZ enabled
+- [ ] ECR VPC endpoints configured for private image pulls
+- [ ] Passport private key in SSM (not in git)
 - [ ] `NODE_ENV=production`, `SWAGGER_ENABLED=false` on Products
-- [ ] HTTPS enabled (CloudFront for frontend; consider ACM + Nginx for API)
-- [ ] Rate limiting enabled on both services
+- [ ] HTTPS via ACM on ALB and CloudFront
 
 ### Services
 
-- [ ] Auth Service running with MySQL, Redis, Kafka
-- [ ] Products Service running with PostgreSQL, Redis, Elasticsearch, Kafka
-- [ ] `SWAGGER_ENABLED=false` on Products Service; Auth OpenAPI/Scramble disabled in production
-- [ ] Nginx gateway does **not** expose `/docs/` or `/api/docs` publicly
+- [ ] Auth Service connected to RDS MySQL + Redis + Kafka
+- [ ] Products Service connected to RDS PostgreSQL + Redis + Elasticsearch + Kafka
+- [ ] `SWAGGER_ENABLED=false` on Products; Auth OpenAPI disabled in production
+- [ ] Nginx / ALB does **not** expose `/docs/` or `/api/docs` publicly
 - [ ] Passport public key synced to Products Service
+- [ ] Container images in ECR; EC2 pulls via VPC endpoint
 
-### Frontend
+### Frontend & CI/CD
 
-- [ ] Production build with correct `VITE_*` URLs
-- [ ] S3 bucket synced
-- [ ] CloudFront distribution active
+- [ ] Production build with correct `VITE_*` URLs (ALB base URL)
+- [ ] S3 bucket synced; CloudFront + WAF active
 - [ ] SPA routing works (deep links resolve)
+- [ ] GitHub Actions OIDC role configured with least privilege
+- [ ] GitHub Secrets for build-time vars; SSM for runtime secrets
 
 ### Observability
 
-- [ ] CloudWatch agent installed and running
-- [ ] Log groups created for Nginx and Docker containers
-- [ ] EC2 metrics visible in CloudWatch dashboard
-- [ ] Alarms configured for CPU, disk, and error rates (optional)
+- [ ] CloudWatch agent installed on EC2
+- [ ] Log groups for Nginx, Docker, and ALB access logs
+- [ ] EC2 and RDS metrics in CloudWatch dashboard
+- [ ] Alarms for CPU, disk, RDS connections, and 5xx rates (optional)
 
 ---
 
@@ -375,29 +581,29 @@ services:
 
 | Resource | URL |
 |----------|-----|
-| API Gateway | https://54.160.228.203/api/v1 |
+| Frontend | `https://<cloudfront-domain>` |
+| API Gateway (ALB) | `https://<alb-dns-name>/api/v1` |
 
 Swagger / OpenAPI is **not available** in production (disabled on both services).
-
-Replace with your CloudFront domain for the frontend once configured.
 
 ---
 
 ## Updating Services
 
-### Backend (rolling update)
+### Backend (via CI/CD or manual)
 
 ```bash
-cd ecommerce-auth-service
-git pull
-bash run-production.sh
+# CI/CD: push to main → GitHub Actions builds, pushes ECR, deploys via SSM
 
-cd ../ecommerce-prodacts-service
-git pull
-make docker-restart
+# Manual on EC2 (via SSM Session Manager):
+docker pull <account-id>.dkr.ecr.us-east-1.amazonaws.com/ecommerce/auth-service:latest
+cd ecommerce-auth-service && bash run-production.sh
+
+docker pull <account-id>.dkr.ecr.us-east-1.amazonaws.com/ecommerce/products-service:latest
+cd ../ecommerce-prodacts-service && make docker-restart
 ```
 
-### Frontend
+### Frontend (via CI/CD or manual)
 
 ```bash
 cd ecommerce-frontend
