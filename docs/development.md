@@ -1,6 +1,6 @@
 # Development Guide
 
-This guide covers local development for all three platform components.
+This guide covers local development for all four platform components.
 
 ## Prerequisites
 
@@ -114,6 +114,57 @@ cd ecommerce-prodacts-service
 # Copy Auth Service public key into .env first
 make docker-up
 ```
+
+## AI Service
+
+**Repository:** [ecommerce-ai-service-](https://github.com/WaelAlQawasmi/ecommerce-ai-service-)
+
+### One-Command Docker Setup
+
+```bash
+git clone https://github.com/WaelAlQawasmi/ecommerce-ai-service-.git
+cd ecommerce-ai-service-
+
+docker-compose up -d
+```
+
+### Local Development
+
+```bash
+uvicorn main:app --reload
+```
+
+**Local URL:**
+
+| Service | URL |
+|---------|-----|
+| HTTP API | http://localhost:8000 |
+
+**Dependencies:**
+
+- Kafka (`KAFKA_BROKER=kafka:9092`)
+- Pinecone vector database
+- MySQL for catalog metadata and user-facing recommendation state
+
+**Environment variables:**
+
+```env
+AI_DB_HOST=mysql
+AI_DB_PORT=3306
+AI_DB_DATABASE=ai_catalog
+AI_DB_USERNAME=ai_user
+AI_DB_PASSWORD=securepassword
+KAFKA_BROKER=kafka:9092
+PINECONE_ENV=us-west1-gcp
+PINECONE_API_KEY=...
+PINECONE_INDEX=products-index
+AUTH_API_URL=http://localhost:8080/api/v1
+PRODUCTS_API_URL=http://localhost:3001/api/v1
+```
+
+The AI service consumes catalog events from Kafka, stores embeddings in Pinecone, and generates recommendations and RAG product descriptions from catalog documentation.
+
+See the AI service repository README for exact startup commands, environment variables, and RAG configuration.
 
 Before running, set the Auth Service RSA public key in `.env`:
 

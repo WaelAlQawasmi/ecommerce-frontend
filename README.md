@@ -1,6 +1,6 @@
 # E-Commerce Platform
 
-A **microservices-based e-commerce platform** with three independently deployable components: Auth Service (Laravel), Products Service (Node.js/TypeScript), and a Vue 3 frontend.
+A **microservices-based e-commerce platform** with four independently deployable components: Auth Service (Laravel), Products Service (Node.js/TypeScript), AI Service (FastAPI), and a Vue 3 frontend.
 
 ## Repositories
 
@@ -8,6 +8,7 @@ A **microservices-based e-commerce platform** with three independently deployabl
 |-----------|------------|-------|
 | **Auth Service** | [ecommerce-auth-service](https://github.com/WaelAlQawasmi/ecommerce-auth-service) | Laravel, MySQL, Redis, Kafka, TDD |
 | **Products Service** | [ecommerce-prodacts-service](https://github.com/WaelAlQawasmi/ecommerce-prodacts-service) | Node.js, TypeScript, DDD, PostgreSQL, Elasticsearch, gRPC, Kafka, TDD |
+| **AI Service** | [ecommerce-ai-service-](https://github.com/WaelAlQawasmi/ecommerce-ai-service-) | FastAPI, Python, RAG, AI recommendations |
 | **Frontend** | This repository | Vue 3, TypeScript, Vite, Tailwind CSS |
 
 ## Platform Documentation
@@ -23,32 +24,65 @@ Full platform documentation lives in the [`docs/`](./docs/README.md) directory:
 | [AWS Deployment](./docs/deployment-aws.md) | VPC, ALB, EC2, RDS, ECR, S3, CloudFront, WAF, Shield, SSM, CI/CD |
 | [Auth Service](./docs/services/auth-service.md) | Authentication, RBAC, Kafka events |
 | [Products Service](./docs/services/products-service.md) | Catalog, search, gRPC stock, Kafka |
+| [AI Service](./docs/services/ai-service.md) | FastAPI AI fetcher, recommendations, RAG descriptions |
 | [Frontend](./docs/services/frontend.md) | SPA, roles, build and deploy |
 
 ## Architecture at a Glance
 
-```
-              AWS Shield + WAF
-                      |
-         CloudFront + S3 (Frontend SPA)
-                      |
-               Web Browser
-                      |
-         ALB (HTTPS, public subnets)
-                      |
-    ┌─────────────────┴─────────────────┐
-    │            VPC                     │
-    │  Private Subnet (AZ-a)  Private Subnet (AZ-b)
-    │       EC2 (Auth)            EC2 (Products)
-    │    Docker + Nginx         Docker + Nginx
-    │         │                       │
-    │    RDS MySQL              RDS PostgreSQL
-    │    Redis, Kafka           Redis, Elasticsearch, Kafka
-    └───────────────────────────────────┘
+Route 53
+                                 |
+                       AWS Shield + AWS WAF
+                                 |
+                            CloudFront
+                  (SPA + API edge cache — never caches /auth/*)
+                                 |
+                  ───────── VPC Boundary ─────────
+                                 |
+                    Application Load Balancer
+                 (Public Subnets, Multi-AZ, path-based routing)
+                                 |
+        ┌────────────────────────┼────────────────────────┐
+        │ /auth/*                │ /products/*             │ /ai/*
+        ▼                        ▼                         ▼
+  Auth Service              Product Service            AI Service
+ (ECS Fargate)              (ECS Fargate)              (ECS Fargate)
+ Tasks: AZ-a, AZ-b          Tasks: AZ-a, AZ-b          Tasks: AZ-b, AZ-c
+ ASG, min 2 tasks           ASG, min 2 tasks           Scales independently
+        │                        │                         │
+        └────────────────────────┼─────────────────────────┘
+                                 │
+                    (parallel targets, no chaining)
+                                 │
+────────────────────────────────────────────────────────────────
+                    DATA LAYER (Private Subnets, Multi-AZ)
+                                 │
+                       Amazon RDS PostgreSQL
+                       (Multi-AZ, primary+replica)
+                    ┌────────────┴────────────┐
+                    │                         │
+              pgvector ext.            Full-text search
+           (embeddings, RAG           (tsvector + GIN index,
+            similarity search)         product/content search)
 
-    ECR (images) ← VPC Endpoint
-    SSM Parameter Store (config) + IAM roles (EC2, CI/CD)
-    GitHub Actions → build, push ECR, deploy S3/EC2
+                            ElastiCache Redis
+                           (Multi-AZ failover)
+────────────────────────────────────────────────────────────────
+                    SHARED VPC INFRASTRUCTURE
+- ECR (Docker Registry)
+- Secrets Manager
+- CloudWatch Logs + Metrics + X-Ray (tracing)
+- SSM Session Manager (no SSH)
+- VPC Endpoints: S3, ECR, CloudWatch, Secrets Manager
+- Security Groups: least-privilege, tier-to-tier only
+- NAT Gateway: for AI Service calls an external LLM API
+
+────────────────────────────────────────────────────────────────
+                        CI/CD PIPELINE
+GitHub Actions → ECR build & push → CodeDeploy (blue/green on ECS)
+                                        ↓
+                        Health-check-gated traffic shift
+                                        ↓
+                    Auto rollback on CloudWatch alarm
 ```
 
 ## User Roles
@@ -69,6 +103,7 @@ Traffic enters through **AWS Shield**, **WAF**, and **CloudFront** (frontend) or
 | API Gateway (ALB) | `https://<alb-dns-name>/api/v1` |
 | Auth routes | `/api/v1/auth/*`, `/users/*`, `/roles/*` → Auth EC2 (`:8080`) |
 | Products routes | `/api/v1/products/*`, `/categories/*` → Products EC2 (`:3001`) |
+| AI routes | `/api/v1/ai/*` → AI EC2 (`:8000`) |
 
 > **API docs (Swagger / OpenAPI) are disabled in production** for both Auth and Products services. Use local/dev environments for interactive API documentation.
 
