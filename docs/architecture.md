@@ -96,6 +96,18 @@ flowchart TB
 | Architecture | DDD layers: domain → application → infrastructure → interfaces |
 | Docs | Swagger UI (disabled in production) |
 
+### AI Service
+
+**Responsibility:** AI-powered catalog fetching, product recommendations, and RAG-based product description generation.
+
+| Concern | Implementation |
+|---------|----------------|
+| AI / RAG | FastAPI with Python, retrieval-augmented generation for catalog documents |
+| Catalog data | Fetches product metadata and catalog documentation from Products Service |
+| Vector search | Vector store for embeddings and retriever queries |
+| API style | REST `/api/v1/ai` |
+| Docs | OpenAPI / Swagger in local/dev environments |
+
 ### Frontend
 
 **Responsibility:** Single-page application for all user roles.
@@ -175,6 +187,7 @@ sequenceDiagram
 |---------|-----------|-------|--------|-----------|
 | Auth | MySQL | Redis | — | Kafka |
 | Products | PostgreSQL | Redis | Elasticsearch | Kafka |
+| AI | MySQL + Pinecone | — | Vector search | Kafka |
 | Frontend | — (stateless) | sessionStorage (JWT) | — | — |
 
 ## API Gateway (ALB + Nginx)
@@ -183,8 +196,7 @@ An **Application Load Balancer** in public subnets is the public API entry point
 
 | Path | Upstream |
 |------|----------|
-| `/api/v1/products/*`, `/api/v1/categories/*` | Products Service (`127.0.0.1:3001`) |
-| `/api/v1/*` (auth, users, roles, etc.) | Auth Service (`127.0.0.1:8080`) |
+| `/api/v1/products/*`, `/api/v1/categories/*` | Products Service (`127.0.0.1:3001`) || `/api/v1/ai/*` | AI Service (`127.0.0.1:8000`) || `/api/v1/*` (auth, users, roles, etc.) | Auth Service (`127.0.0.1:8080`) |
 
 Swagger / OpenAPI (`/docs/*`, `/api/docs`) is **disabled in production** and not routed through the gateway.
 

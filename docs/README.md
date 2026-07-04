@@ -1,6 +1,6 @@
 # E-Commerce Platform Documentation
 
-Distributed e-commerce platform built as a **microservices architecture** with three independently deployable components: an Auth service, a Products service, and a Vue frontend.
+Distributed e-commerce platform built as a **microservices architecture** with four independently deployable components: an Auth service, a Products service, an AI service, and a Vue frontend.
 
 ## Repositories
 
@@ -8,6 +8,7 @@ Distributed e-commerce platform built as a **microservices architecture** with t
 |-----------|------------|-------|
 | Auth Service | [ecommerce-auth-service](https://github.com/WaelAlQawasmi/ecommerce-auth-service) | Laravel, MySQL, Redis, Kafka |
 | Products Service | [ecommerce-prodacts-service](https://github.com/WaelAlQawasmi/ecommerce-prodacts-service) | Node.js, TypeScript, PostgreSQL, Elasticsearch, Kafka, gRPC |
+| AI Service | [ecommerce-ai-service-](https://github.com/WaelAlQawasmi/ecommerce-ai-service-) | FastAPI, Python, RAG, AI recommendations |
 | Frontend | [ecommerce-frontend](https://github.com/WaelAlQawasmi/ecommerce-frontend) | Vue 3, TypeScript, Vite, Tailwind CSS |
 
 ## Documentation Index
@@ -20,6 +21,7 @@ Distributed e-commerce platform built as a **microservices architecture** with t
 | [AWS Deployment](./deployment-aws.md) | VPC, ALB, EC2, RDS, ECR, S3, CloudFront, WAF, SSM, CI/CD |
 | [Auth Service](./services/auth-service.md) | Authentication, authorization, Kafka events, API reference |
 | [Products Service](./services/products-service.md) | Catalog, search, stock reservation, gRPC, Kafka |
+| [AI Service](./services/ai-service.md) | AI fetcher, product recommendations, RAG descriptions |
 | [Frontend](./services/frontend.md) | Vue SPA, roles, build scripts, environment configuration |
 
 ## Platform Overview
