@@ -29,6 +29,7 @@ Full platform documentation lives in the [`docs/`](./docs/README.md) directory:
 
 ## Architecture at a Glance
 
+```text
 Route 53
                                  |
                        AWS Shield + AWS WAF
